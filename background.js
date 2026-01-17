@@ -551,6 +551,65 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep the message channel open for async response
 });
 
+// ============================================================================
+// Context Menu
+// ============================================================================
+
+browserAPI.runtime.onInstalled.addListener(() => {
+    browserAPI.contextMenus.create({
+        id: "translate-page",
+        title: "Translate Page",
+        contexts: ["page"]
+    }, () => {
+        // Ignore error if item already exists
+        if (browserAPI.runtime.lastError) {
+            // Suppress duplicate id error
+        }
+    });
+});
+
+browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "translate-page") {
+        if (!tab || !tab.id) return;
+
+        try {
+            const settings = await getSettings();
+
+            // Try enabling translation
+            await browserAPI.tabs.sendMessage(tab.id, {
+                type: 'START_TRANSLATION',
+                targetLanguage: settings.targetLanguage,
+                showGlow: settings.showGlow
+            });
+
+        } catch (e) {
+            console.log('[Background] Initial translation connection failed, attempting injection:', e);
+
+            // If message failed, content script might not be loaded. Inject it.
+            try {
+                await browserAPI.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['content.js']
+                });
+
+                // Wait briefly for script to initialize
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                // Retry message
+                const settings = await getSettings();
+                await browserAPI.tabs.sendMessage(tab.id, {
+                    type: 'START_TRANSLATION',
+                    targetLanguage: settings.targetLanguage,
+                    showGlow: settings.showGlow
+                });
+
+            } catch (retryErr) {
+                console.error('[Background] Context menu translation failed:', retryErr);
+            }
+        }
+    }
+});
+
 // Initialize settings on startup
 loadSettings().then(() => {
     console.log('[Background] Local LLM Translator background script loaded');
