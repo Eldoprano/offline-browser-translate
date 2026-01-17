@@ -70,22 +70,43 @@ let currentSettings = { ...DEFAULT_SETTINGS };
 let isTranslating = false;
 let detectedPageLanguage = 'en';
 
-// Detect page language from active tab
+// Detect page language from active tab (using programmatic injection)
 async function detectPageLanguage() {
+    if (elements.detectedLang) {
+        elements.detectedLang.textContent = 'Detecting...';
+    }
+
     try {
         const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
         if (tab && tab.id) {
-            const result = await browserAPI.tabs.sendMessage(tab.id, { type: 'GET_PAGE_LANGUAGE' });
-            if (result && result.language) {
-                detectedPageLanguage = result.language;
+            // DIRECT INJECTION: Read language without requiring content script
+            const result = await browserAPI.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: () => {
+                    // Try HTML lang attribute
+                    const htmlLang = document.documentElement.lang || document.querySelector('html')?.getAttribute('lang');
+                    if (htmlLang) return htmlLang.split('-')[0].toLowerCase();
+
+                    // Try meta tag
+                    const metaLang = document.querySelector('meta[http-equiv="content-language"]')?.getAttribute('content');
+                    if (metaLang) return metaLang.split('-')[0].toLowerCase();
+
+                    return 'en'; // Default
+                }
+            });
+
+            if (result && result[0] && result[0].result) {
+                detectedPageLanguage = result[0].result;
                 if (elements.detectedLang) {
                     const langName = LANGUAGES[detectedPageLanguage] || detectedPageLanguage.toUpperCase();
                     elements.detectedLang.textContent = langName;
                 }
+            } else {
+                throw new Error('No result from script');
             }
         }
     } catch (e) {
-        // Content script may not be ready
+        console.error('Language detection failed:', e);
         if (elements.detectedLang) {
             elements.detectedLang.textContent = 'unknown';
         }
@@ -107,11 +128,11 @@ function populateSourceLangOverride() {
     }
 }
 
-// Show/hide source language group based on format
+// Show/hide source language group (Always show now per user request)
 function updateSourceLangVisibility() {
     if (!elements.sourceLangGroup) return;
-    const isTranslateGemma = currentSettings.requestFormat === 'translategemma';
-    elements.sourceLangGroup.hidden = !isTranslateGemma;
+    // Always show source language options so user can see detection status
+    elements.sourceLangGroup.hidden = false;
 }
 
 // Show toast notification
@@ -214,6 +235,11 @@ function applySettingsToUI() {
     elements.customSystem.value = currentSettings.customSystemPrompt || '';
     elements.customUser.value = currentSettings.customUserPromptTemplate || '';
 
+    // Restore source language override
+    if (elements.sourceLangOverride && currentSettings.sourceLanguage) {
+        elements.sourceLangOverride.value = currentSettings.sourceLanguage;
+    }
+
     // Show custom prompts if custom format selected
     elements.customPrompts.hidden = currentSettings.requestFormat !== 'custom';
 
@@ -312,6 +338,8 @@ async function saveCurrentSettings() {
         requestFormat: elements.requestFormat.value,
         useStructuredOutput: elements.useStructuredOutput.checked,
         showGlow: elements.showGlow.checked,
+        // Save the source language override preference
+        sourceLanguage: elements.sourceLangOverride ? elements.sourceLangOverride.value : 'auto',
         customSystemPrompt: elements.customSystem.value,
         customUserPromptTemplate: elements.customUser.value
     };
@@ -353,13 +381,19 @@ async function startTranslation() {
         try {
             await browserAPI.scripting.executeScript({
                 target: { tabId: tab.id },
-                files: ['content.js']
+                files: ['/content.js']
             });
             // Give it a moment to initialize
             await new Promise(resolve => setTimeout(resolve, 100));
         } catch (injectErr) {
             console.log('Script injection note:', injectErr.message);
             // May already be injected or page doesn't allow scripts
+        }
+
+        // Resolve source language: if auto, use the detected language we found earlier
+        let finalSourceLang = currentSettings.sourceLanguage;
+        if (finalSourceLang === 'auto' && detectedPageLanguage) {
+            finalSourceLang = detectedPageLanguage;
         }
 
         // Try to send message with retry
@@ -369,6 +403,7 @@ async function startTranslation() {
                 const response = await browserAPI.tabs.sendMessage(tab.id, {
                     type: 'START_TRANSLATION',
                     targetLanguage: currentSettings.targetLanguage,
+                    sourceLanguage: finalSourceLang, // Add source language for logging and override
                     showGlow: currentSettings.showGlow
                 });
                 if (response && response.started) {

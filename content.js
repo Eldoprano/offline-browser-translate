@@ -6,6 +6,15 @@
 // Use browser API with chrome fallback
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 
+// Prevent duplicate injection
+if (window.hasLLMTranslatorContentScript) {
+    console.log('[Translator] Content script already injected, skipping initialization');
+    // If we're re-injecting, we might want to ensure the listener returns true to keep the channel open if needed,
+    // but usually we just want to stop re-execution.
+    throw new Error('Content script already injected'); // Determines this execution stop
+}
+window.hasLLMTranslatorContentScript = true;
+
 // Track text nodes and their original content
 const textNodeMap = new Map();
 const translatedNodeSet = new Set(); // Track which nodes have been translated
@@ -431,13 +440,15 @@ function getPageLanguage() {
  * Translate a batch of text items with retry logic
  * Returns { applied: number, failed: Array } 
  */
-async function translateBatch(textItems, targetLanguage, retries = 3) {
+async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto', retries = 3) {
     if (textItems.length === 0) return { applied: 0, failed: [] };
 
     console.log(`[Translator] translateBatch called with ${textItems.length} items`);
 
-    // Detect page source language from HTML lang attribute
-    const pageLanguage = getPageLanguage();
+    // Use passed source language if valid, otherwise detect from page
+    const pageLanguage = (sourceLanguage && sourceLanguage !== 'auto')
+        ? sourceLanguage
+        : getPageLanguage();
 
     let lastError = null;
     for (let attempt = 0; attempt < retries; attempt++) {
@@ -530,7 +541,7 @@ function onScroll() {
 /**
  * Main translation function with queue and cancellation support
  */
-async function translatePage(targetLanguage, enableAutoTranslate = true) {
+async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAutoTranslate = true) {
     if (translationInProgress) {
         showStatus('Translation already in progress...', true);
         return;
@@ -540,6 +551,11 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
     translationInProgress = true;
     translationCancelled = false;
     showStatus('Extracting text...');
+
+    // Log source language if provided
+    if (sourceLanguage && sourceLanguage !== 'auto') {
+        console.log(`[Translator] Using explicit source language: ${sourceLanguage}`);
+    }
 
     // Add scroll listener for dynamic priority
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -575,7 +591,7 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
             showStatus(`Translating... ${percent}%`);
 
             try {
-                const result = await translateBatch(batch, targetLanguage);
+                const result = await translateBatch(batch, targetLanguage, sourceLanguage);
                 totalApplied += result.applied;
 
                 // Track failed items (don't add to totalProcessed again)
@@ -620,7 +636,7 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
                 for (let i = 0; i < itemsToRetry.length && !translationCancelled; i += retryBatchSize) {
                     const batch = itemsToRetry.slice(i, i + retryBatchSize);
                     try {
-                        const result = await translateBatch(batch, targetLanguage, 1); // Single retry per batch
+                        const result = await translateBatch(batch, targetLanguage, sourceLanguage, 1); // Single retry per batch
                         totalApplied += result.applied;
                         if (result.failed && result.failed.length > 0) {
                             failedItems.push(...result.failed);
@@ -792,7 +808,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.showGlow !== undefined) {
                 showGlow = message.showGlow;
             }
-            translatePage(message.targetLanguage, true);
+            // Pass sourceLanguage to translatePage
+            translatePage(message.targetLanguage, message.sourceLanguage, true);
             sendResponse({ started: true });
             break;
 

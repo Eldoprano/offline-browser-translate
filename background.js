@@ -531,6 +531,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         ...settings,
                         sourceLanguage: message.sourceLanguage || settings.sourceLanguage || 'en'
                     };
+
+                    // WARNING LOG: Check if source language is missing or 'auto'
+                    if (!settingsWithSource.sourceLanguage || settingsWithSource.sourceLanguage === 'auto') {
+                        console.warn('[Background] WARNING: Source language is "auto" or missing. Some models (like TranslateGemma) require a specific source language code to function correctly.');
+                    }
+
                     const translations = await translate(
                         message.texts,
                         message.targetLanguage,
@@ -575,18 +581,45 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
         try {
             const settings = await getSettings();
 
-            // Try enabling translation
-            await browserAPI.tabs.sendMessage(tab.id, {
-                type: 'START_TRANSLATION',
-                targetLanguage: settings.targetLanguage,
-                showGlow: settings.showGlow
-            });
+            // Resolve source language - if 'auto', try to detect it programmatically
+            let sourceLang = settings.sourceLanguage;
+            if (!sourceLang || sourceLang === 'auto') {
+                try {
+                    const result = await browserAPI.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        func: () => {
+                            const htmlLang = document.documentElement.lang || document.querySelector('html')?.getAttribute('lang');
+                            if (htmlLang) return htmlLang.split('-')[0].toLowerCase();
+                            const metaLang = document.querySelector('meta[http-equiv="content-language"]')?.getAttribute('content');
+                            if (metaLang) return metaLang.split('-')[0].toLowerCase();
+                            return null;
+                        }
+                    });
+                    if (result && result[0] && result[0].result) {
+                        sourceLang = result[0].result;
+                        console.log(`[Background] Detected page language for context menu: ${sourceLang}`);
+                    }
+                } catch (detectErr) {
+                    console.log('[Background] Could not detect language from background:', detectErr);
+                }
+            }
 
-        } catch (e) {
-            console.log('[Background] Initial translation connection failed, attempting injection:', e);
+            // Helper to send message
+            const sendTranslationMessage = async () => {
+                await browserAPI.tabs.sendMessage(tab.id, {
+                    type: 'START_TRANSLATION',
+                    targetLanguage: settings.targetLanguage,
+                    sourceLanguage: sourceLang || 'auto', // Use detected or fall back to auto
+                    showGlow: settings.showGlow
+                });
+            };
 
-            // If message failed, content script might not be loaded. Inject it.
             try {
+                await sendTranslationMessage();
+            } catch (e) {
+                console.log('[Background] Initial translation connection failed, attempting injection:', e);
+
+                // If message failed, content script might not be loaded. Inject it.
                 await browserAPI.scripting.executeScript({
                     target: { tabId: tab.id },
                     files: ['content.js']
@@ -596,16 +629,11 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
                 await new Promise(resolve => setTimeout(resolve, 200));
 
                 // Retry message
-                const settings = await getSettings();
-                await browserAPI.tabs.sendMessage(tab.id, {
-                    type: 'START_TRANSLATION',
-                    targetLanguage: settings.targetLanguage,
-                    showGlow: settings.showGlow
-                });
-
-            } catch (retryErr) {
-                console.error('[Background] Context menu translation failed:', retryErr);
+                await sendTranslationMessage();
             }
+
+        } catch (e) {
+            console.error('[Background] Context menu translation failed:', e);
         }
     }
 });
