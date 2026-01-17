@@ -179,6 +179,9 @@ async function loadModels() {
             if (currentSettings.selectedModel) {
                 elements.modelSelect.value = currentSettings.selectedModel;
             }
+
+            // Auto-configure format for the selected model
+            autoSetFormatForModel(elements.modelSelect.value);
         }
     } catch (e) {
         console.error('Failed to load models:', e);
@@ -278,6 +281,30 @@ function isTranslateGemmaModel(modelId) {
         lowerName.includes('translate_gemma');
 }
 
+// Automatically set format based on model type
+function autoSetFormatForModel(modelId) {
+    if (!modelId) return;
+
+    const isTranslateGemma = isTranslateGemmaModel(modelId);
+
+    if (isTranslateGemma) {
+        if (elements.requestFormat.value !== 'translategemma') {
+            elements.requestFormat.value = 'translategemma';
+            updateFormatDescription('translategemma');
+            updateVisibility();
+            showToast('Automatically switched to TranslateGemma format');
+        }
+    } else {
+        // If switching away from TranslateGemma model and format is still TranslateGemma,
+        // switch back to default
+        if (elements.requestFormat.value === 'translategemma') {
+            elements.requestFormat.value = 'default';
+            updateFormatDescription('default');
+            updateVisibility();
+        }
+    }
+}
+
 // Update visibility of sections based on current settings
 function updateVisibility() {
     const format = elements.requestFormat.value;
@@ -357,6 +384,7 @@ function setupEventListeners() {
     if (elements.modelSelect) {
         elements.modelSelect.addEventListener('change', () => {
             currentSettings.selectedModel = elements.modelSelect.value;
+            autoSetFormatForModel(currentSettings.selectedModel);
             updateVisibility(); // Update TranslateGemma help visibility
         });
     }

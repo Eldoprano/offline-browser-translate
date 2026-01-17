@@ -263,6 +263,32 @@ function isTranslateGemmaModel(modelId) {
         lowerName.includes('translate_gemma');
 }
 
+// Automatically set format based on model type
+function autoSetFormatForModel(modelId) {
+    if (!modelId) return;
+
+    const isTranslateGemma = isTranslateGemmaModel(modelId);
+
+    if (isTranslateGemma) {
+        if (currentSettings.requestFormat !== 'translategemma') {
+            elements.requestFormat.value = 'translategemma';
+            currentSettings.requestFormat = 'translategemma';
+            updateFormatDescription('translategemma');
+            elements.customPrompts.hidden = true;
+            showToast('Switched to TranslateGemma format');
+        }
+    } else {
+        // If switching away from TranslateGemma model and format is still TranslateGemma,
+        // switch back to default
+        if (currentSettings.requestFormat === 'translategemma') {
+            elements.requestFormat.value = 'default';
+            currentSettings.requestFormat = 'default';
+            updateFormatDescription('default');
+            elements.customPrompts.hidden = true;
+        }
+    }
+}
+
 // Check which providers are available
 async function checkProviders() {
     const statusWrapper = elements.providerStatus;
@@ -316,6 +342,9 @@ async function loadModels() {
 
         elements.modelSelect.disabled = false;
         elements.translateBtn.disabled = false;
+
+        // Auto-configure format for the selected model
+        autoSetFormatForModel(elements.modelSelect.value);
 
     } catch (e) {
         console.error('Failed to load models:', e);
@@ -520,16 +549,7 @@ function setupEventListeners() {
         currentSettings.selectedModel = modelId;
 
         // Auto-detect TranslateGemma model and auto-switch format
-        if (isTranslateGemmaModel(modelId)) {
-            if (currentSettings.requestFormat !== 'translategemma') {
-                // Auto-switch to TranslateGemma format
-                elements.requestFormat.value = 'translategemma';
-                currentSettings.requestFormat = 'translategemma';
-                updateFormatDescription('translategemma');
-                elements.customPrompts.hidden = true;
-                showToast('Switched to TranslateGemma format');
-            }
-        }
+        autoSetFormatForModel(modelId);
 
         saveCurrentSettings();
     });
