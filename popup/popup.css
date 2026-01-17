@@ -63,6 +63,7 @@ body {
 
 /* Header */
 header {
+  position: relative;
   text-align: center;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--bg-tertiary);
@@ -80,25 +81,19 @@ header h1 {
   color: var(--text-secondary);
 }
 
-/* Status Section */
-.status-section {
-  background: var(--bg-secondary);
-  border-radius: var(--border-radius);
-  padding: 10px 12px;
-  border: 1px solid var(--bg-tertiary);
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+/* Status Dot (positioned in header) */
+.status-dot-wrapper {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  cursor: help;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
+  display: block;
   background: var(--warning);
   animation: pulse 1.5s infinite;
 }
@@ -495,6 +490,74 @@ textarea.highlight-vars {
   line-height: 1.5;
 }
 
-/* We can't do real syntax highlighting in a textarea, 
-   so we'll use a backdrop method if needed, but for now 
-   simple variable insertion buttons are a good step */
+/* Format Description */
+.format-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+/* Button Row */
+.button-row {
+  display: flex;
+  gap: 8px;
+}
+
+.secondary-btn.small {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+/* Text Button */
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 6px;
+  transition: var(--transition);
+}
+
+.text-btn:hover {
+  color: var(--red);
+}
+
+/* Source Language Group */
+.source-lang-group {
+  background: var(--bg-tertiary);
+  padding: 8px 10px;
+  border-radius: var(--border-radius);
+  margin-bottom: 8px;
+}
+
+.source-lang-group label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
+.detected-lang {
+  color: var(--aqua);
+  font-weight: 600;
+}
+
+.small-select {
+  padding: 4px 8px;
+  font-size: 11px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg3);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+.small-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}

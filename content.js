@@ -14,10 +14,14 @@ let translationCancelled = false;  // Flag to cancel ongoing translation
 let nextId = 0;
 let currentTargetLanguage = 'en';
 let autoTranslateEnabled = false;
-let showGlow = true; // Setting for glow effect
+let showGlow = false; // Setting for glow effect (disabled by default)
 let mutationObserver = null;
 let pendingNewNodes = [];
 let autoTranslateDebounceTimer = null;
+
+// Translation state for toggle functionality
+let hasTranslationCache = false; // True if we have cached translations
+let isShowingTranslations = false; // True if currently showing translations
 
 // Queue of pending text items to translate (with dynamic priority)
 let pendingTranslationQueue = [];
@@ -327,15 +331,39 @@ function restoreOriginalText() {
         if (entry.translated) {
             try {
                 entry.node.textContent = entry.originalText;
-                entry.translated = false;
+                // Keep translated = true so we can toggle back
                 translatedNodeSet.delete(entry.node);
             } catch (e) {
                 // Node may have been removed
             }
         }
     }
+    isShowingTranslations = false;
     // Stop auto-translate when restoring
     stopAutoTranslate();
+}
+
+/**
+ * Restore cached translations (toggle back to translated view)
+ */
+function restoreCachedTranslations() {
+    if (!hasTranslationCache) return false;
+
+    let restoredCount = 0;
+    for (const [id, entry] of textNodeMap) {
+        if (entry.translatedText && entry.originalText !== entry.translatedText) {
+            try {
+                entry.node.textContent = entry.translatedText;
+                entry.translated = true;
+                translatedNodeSet.add(entry.node);
+                restoredCount++;
+            } catch (e) {
+                // Node may have been removed
+            }
+        }
+    }
+    isShowingTranslations = true;
+    return restoredCount > 0;
 }
 
 /**
@@ -382,6 +410,24 @@ function hideStatus() {
 }
 
 /**
+ * Detect page source language from HTML lang attribute
+ * Returns base language code (e.g., "en" from "en-US")
+ */
+function getPageLanguage() {
+    const htmlLang = document.documentElement.lang || document.querySelector('html')?.getAttribute('lang');
+    if (htmlLang) {
+        // Extract base language code (e.g., "en" from "en-US")
+        return htmlLang.split('-')[0].toLowerCase();
+    }
+    // Fallback: try meta tag
+    const metaLang = document.querySelector('meta[http-equiv="content-language"]')?.getAttribute('content');
+    if (metaLang) {
+        return metaLang.split('-')[0].toLowerCase();
+    }
+    return 'en'; // Default fallback
+}
+
+/**
  * Translate a batch of text items with retry logic
  * Returns { applied: number, failed: Array } 
  */
@@ -390,13 +436,17 @@ async function translateBatch(textItems, targetLanguage, retries = 3) {
 
     console.log(`[Translator] translateBatch called with ${textItems.length} items`);
 
+    // Detect page source language from HTML lang attribute
+    const pageLanguage = getPageLanguage();
+
     let lastError = null;
     for (let attempt = 0; attempt < retries; attempt++) {
         try {
             const response = await browserAPI.runtime.sendMessage({
                 type: 'TRANSLATE',
                 texts: textItems,
-                targetLanguage
+                targetLanguage,
+                sourceLanguage: pageLanguage // Pass detected page language for TranslateGemma
             });
 
             console.log(`[Translator] translateBatch response:`, response);
@@ -510,7 +560,7 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
         showStatus(`Found ${textItems.length} text elements. Translating...`);
 
         let totalApplied = 0;
-        let totalFailed = 0;
+        let totalProcessed = 0; // Track how many items we've attempted
         const totalItems = textItems.length;
         const batchSize = 8; // Process in batches
         const failedItems = []; // Track items that failed for potential retry
@@ -518,24 +568,24 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
         while (pendingTranslationQueue.length > 0 && !translationCancelled) {
             // Take next batch from queue (highest priority items)
             const batch = pendingTranslationQueue.splice(0, batchSize);
+            totalProcessed += batch.length;
 
-            const percent = Math.round(((totalApplied + totalFailed) / totalItems) * 100);
+            // Cap percentage at 100%
+            const percent = Math.min(100, Math.round((totalProcessed / totalItems) * 100));
             showStatus(`Translating... ${percent}%`);
 
             try {
                 const result = await translateBatch(batch, targetLanguage);
                 totalApplied += result.applied;
 
-                // Track failed items
+                // Track failed items (don't add to totalProcessed again)
                 if (result.failed && result.failed.length > 0) {
                     failedItems.push(...result.failed);
-                    totalFailed += result.failed.length;
                 }
             } catch (e) {
                 console.error('Batch error:', e);
                 // Add batch items to failed list
                 failedItems.push(...batch);
-                totalFailed += batch.length;
             }
 
             // Check cancellation between batches
@@ -547,14 +597,54 @@ async function translatePage(targetLanguage, enableAutoTranslate = true) {
         }
 
         if (!translationCancelled) {
+            // Retry failed items silently (up to 2 additional attempts)
+            let retryAttempts = 0;
+            const maxRetries = 2;
+
+            while (failedItems.length > 0 && retryAttempts < maxRetries && !translationCancelled) {
+                retryAttempts++;
+                console.log(`[Translator] Retry attempt ${retryAttempts} for ${failedItems.length} failed items`);
+
+                // Show progress as percentage (continuing from where we left off)
+                const percent = Math.min(100, Math.round((totalApplied / totalItems) * 100));
+                showStatus(`Translating... ${percent}%`);
+
+                // Wait a bit before retry
+                await new Promise(r => setTimeout(r, 500 * retryAttempts));
+
+                const itemsToRetry = [...failedItems];
+                failedItems.length = 0; // Clear for this round
+
+                // Process in smaller batches for retries
+                const retryBatchSize = 4;
+                for (let i = 0; i < itemsToRetry.length && !translationCancelled; i += retryBatchSize) {
+                    const batch = itemsToRetry.slice(i, i + retryBatchSize);
+                    try {
+                        const result = await translateBatch(batch, targetLanguage, 1); // Single retry per batch
+                        totalApplied += result.applied;
+                        if (result.failed && result.failed.length > 0) {
+                            failedItems.push(...result.failed);
+                        }
+                    } catch (e) {
+                        failedItems.push(...batch);
+                    }
+                }
+            }
+
             // Show completion message with stats
             const successRate = Math.round((totalApplied / totalItems) * 100);
             let statusMsg = `Translated ${totalApplied}/${totalItems} elements (${successRate}%)`;
 
             if (failedItems.length > 0) {
-                console.warn(`[Translator] ${failedItems.length} items failed:`,
+                console.warn(`[Translator] ${failedItems.length} items still failed after retries:`,
                     failedItems.slice(0, 5).map(f => f.text.substring(0, 30)));
                 statusMsg += ` - ${failedItems.length} failed`;
+            }
+
+            // Mark that we have cached translations for toggle
+            if (totalApplied > 0) {
+                hasTranslationCache = true;
+                isShowingTranslations = true;
             }
 
             showStatus(statusMsg);
@@ -719,7 +809,24 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             restoreOriginalText();
             showStatus('Restored original text');
             setTimeout(hideStatus, 2000);
-            sendResponse({ restored: true });
+            sendResponse({ restored: true, hasCache: hasTranslationCache });
+            break;
+
+        case 'TOGGLE_TRANSLATION':
+            // Toggle between translated and original
+            if (isShowingTranslations) {
+                restoreOriginalText();
+                showStatus('Showing original text');
+                setTimeout(hideStatus, 2000);
+                sendResponse({ showing: 'original', hasCache: hasTranslationCache });
+            } else if (hasTranslationCache) {
+                restoreCachedTranslations();
+                showStatus('Restored translations');
+                setTimeout(hideStatus, 2000);
+                sendResponse({ showing: 'translated', hasCache: hasTranslationCache });
+            } else {
+                sendResponse({ showing: 'original', hasCache: false });
+            }
             break;
 
         case 'TRANSLATION_PROGRESS':
@@ -765,6 +872,12 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({
                 isTranslating: translationInProgress,
                 isAutoTranslating: autoTranslateEnabled
+            });
+            break;
+
+        case 'GET_PAGE_LANGUAGE':
+            sendResponse({
+                language: getPageLanguage()
             });
             break;
 

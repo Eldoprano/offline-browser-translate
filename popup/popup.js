@@ -29,6 +29,9 @@ const elements = {
     modelSelect: document.getElementById('modelSelect'),
     refreshModels: document.getElementById('refreshModels'),
     languageSelect: document.getElementById('languageSelect'),
+    sourceLangGroup: document.getElementById('sourceLangGroup'),
+    detectedLang: document.getElementById('detectedLang'),
+    sourceLangOverride: document.getElementById('sourceLangOverride'),
     translateBtn: document.getElementById('translateBtn'),
     cancelBtn: document.getElementById('cancelBtn'),
     restoreBtn: document.getElementById('restoreBtn'),
@@ -42,17 +45,74 @@ const elements = {
     temperature: document.getElementById('temperature'),
     temperatureValue: document.getElementById('temperatureValue'),
     requestFormat: document.getElementById('requestFormat'),
+    formatDescription: document.getElementById('formatDescription'),
     useStructuredOutput: document.getElementById('useStructuredOutput'),
     showGlow: document.getElementById('showGlow'),
     customPrompts: document.getElementById('customPrompts'),
     customSystem: document.getElementById('customSystem'),
     customUser: document.getElementById('customUser'),
     saveSettings: document.getElementById('saveSettings'),
+    openOptions: document.getElementById('openOptions'),
+    resetSettings: document.getElementById('resetSettings'),
     toast: document.getElementById('toast')
+};
+
+// Format descriptions for each request format type
+const FORMAT_DESCRIPTIONS = {
+    default: 'Standard JSON output format. Best for most models. Returns translations as a structured JSON array.',
+    translategemma: 'Specialized format for TranslateGemma models. Uses the exact prompt structure required by TranslateGemma. Auto-detects source language from the page.',
+    hunyuan: 'Format optimized for Hunyuan-MT models. Minimal prompt with no system message.',
+    simple: 'Simple line-by-line output. Good for smaller models that struggle with JSON formatting.',
+    custom: 'Use your own custom system and user prompts. Full control over the translation request.'
 };
 
 let currentSettings = { ...DEFAULT_SETTINGS };
 let isTranslating = false;
+let detectedPageLanguage = 'en';
+
+// Detect page language from active tab
+async function detectPageLanguage() {
+    try {
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) {
+            const result = await browserAPI.tabs.sendMessage(tab.id, { type: 'GET_PAGE_LANGUAGE' });
+            if (result && result.language) {
+                detectedPageLanguage = result.language;
+                if (elements.detectedLang) {
+                    const langName = LANGUAGES[detectedPageLanguage] || detectedPageLanguage.toUpperCase();
+                    elements.detectedLang.textContent = langName;
+                }
+            }
+        }
+    } catch (e) {
+        // Content script may not be ready
+        if (elements.detectedLang) {
+            elements.detectedLang.textContent = 'unknown';
+        }
+    }
+}
+
+// Populate source language override dropdown
+function populateSourceLangOverride() {
+    if (!elements.sourceLangOverride) return;
+
+    elements.sourceLangOverride.innerHTML = '<option value="auto">Use detected</option>';
+    const sortedLangs = Object.entries(LANGUAGES).sort((a, b) => a[1].localeCompare(b[1]));
+
+    for (const [code, name] of sortedLangs) {
+        const option = document.createElement('option');
+        option.value = code;
+        option.textContent = name;
+        elements.sourceLangOverride.appendChild(option);
+    }
+}
+
+// Show/hide source language group based on format
+function updateSourceLangVisibility() {
+    if (!elements.sourceLangGroup) return;
+    const isTranslateGemma = currentSettings.requestFormat === 'translategemma';
+    elements.sourceLangGroup.hidden = !isTranslateGemma;
+}
 
 // Show toast notification
 function showToast(message, type = 'success') {
@@ -79,12 +139,32 @@ function showToast(message, type = 'success') {
 
 // Initialize popup
 async function init() {
+    populateLanguageDropdown();
+    populateSourceLangOverride();
     await loadSettings();
     applySettingsToUI();
+    updateSourceLangVisibility();
     await checkProviders();
     await loadModels();
     setupEventListeners();
     await checkTranslationStatus();
+    await detectPageLanguage();
+}
+
+// Populate language dropdown from LANGUAGES object (defined in languages.js)
+function populateLanguageDropdown() {
+    const select = elements.languageSelect;
+    select.innerHTML = '';
+
+    // Sort languages by name for better UX
+    const sortedLangs = Object.entries(LANGUAGES).sort((a, b) => a[1].localeCompare(b[1]));
+
+    for (const [code, name] of sortedLangs) {
+        const option = document.createElement('option');
+        option.value = code;
+        option.textContent = name;
+        select.appendChild(option);
+    }
 }
 
 // Check if translation is already running in active tab
@@ -136,12 +216,31 @@ function applySettingsToUI() {
 
     // Show custom prompts if custom format selected
     elements.customPrompts.hidden = currentSettings.requestFormat !== 'custom';
+
+    // Update format description
+    updateFormatDescription(currentSettings.requestFormat);
+}
+
+// Update format description text
+function updateFormatDescription(format) {
+    if (elements.formatDescription) {
+        elements.formatDescription.textContent = FORMAT_DESCRIPTIONS[format] || '';
+    }
+}
+
+// Check if a model is a TranslateGemma model
+function isTranslateGemmaModel(modelId) {
+    if (!modelId) return false;
+    const lowerName = modelId.toLowerCase();
+    return lowerName.includes('translategemma') ||
+        lowerName.includes('translate-gemma') ||
+        lowerName.includes('translate_gemma');
 }
 
 // Check which providers are available
 async function checkProviders() {
-    const statusDot = elements.providerStatus.querySelector('.status-dot');
-    const statusText = elements.providerStatus.querySelector('.status-text');
+    const statusWrapper = elements.providerStatus;
+    const statusDot = statusWrapper.querySelector('.status-dot');
 
     try {
         const response = await browserAPI.runtime.sendMessage({ type: 'DETECT_PROVIDERS' });
@@ -152,14 +251,14 @@ async function checkProviders() {
 
         if (providers.length > 0) {
             statusDot.className = 'status-dot connected';
-            statusText.textContent = `Connected: ${providers.join(', ')}`;
+            statusWrapper.title = `Connected: ${providers.join(', ')}`;
         } else {
             statusDot.className = 'status-dot error';
-            statusText.textContent = 'No providers found';
+            statusWrapper.title = 'No providers found';
         }
     } catch (e) {
         statusDot.className = 'status-dot error';
-        statusText.textContent = 'Error checking providers';
+        statusWrapper.title = 'Error checking providers';
     }
 }
 
@@ -317,13 +416,20 @@ async function cancelTranslation() {
     elements.cancelBtn.hidden = true;
 }
 
-// Restore original text
-async function restoreOriginal() {
+// Toggle translation on/off (uses cached translations if available)
+async function toggleTranslation() {
     try {
         const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
-        await browserAPI.tabs.sendMessage(tab.id, { type: 'RESTORE_ORIGINAL' });
+        const response = await browserAPI.tabs.sendMessage(tab.id, { type: 'TOGGLE_TRANSLATION' });
+
+        // Update button text based on state
+        if (response && response.showing === 'translated') {
+            elements.restoreBtn.textContent = 'Original';
+        } else {
+            elements.restoreBtn.textContent = response?.hasCache ? 'Translated' : 'Restore';
+        }
     } catch (e) {
-        console.error('Restore error:', e);
+        console.error('Toggle error:', e);
     }
 }
 
@@ -335,8 +441,8 @@ function setupEventListeners() {
     // Cancel button
     elements.cancelBtn.addEventListener('click', cancelTranslation);
 
-    // Restore button
-    elements.restoreBtn.addEventListener('click', restoreOriginal);
+    // Restore/Toggle button
+    elements.restoreBtn.addEventListener('click', toggleTranslation);
 
     // Refresh models
     elements.refreshModels.addEventListener('click', async () => {
@@ -358,7 +464,11 @@ function setupEventListeners() {
 
     // Request format change
     elements.requestFormat.addEventListener('change', (e) => {
-        elements.customPrompts.hidden = e.target.value !== 'custom';
+        const format = e.target.value;
+        elements.customPrompts.hidden = format !== 'custom';
+        currentSettings.requestFormat = format;
+        updateFormatDescription(format);
+        updateSourceLangVisibility();
     });
 
     // Save settings button
@@ -371,7 +481,21 @@ function setupEventListeners() {
 
     // Auto-save model and language selection
     elements.modelSelect.addEventListener('change', () => {
-        currentSettings.selectedModel = elements.modelSelect.value;
+        const modelId = elements.modelSelect.value;
+        currentSettings.selectedModel = modelId;
+
+        // Auto-detect TranslateGemma model and auto-switch format
+        if (isTranslateGemmaModel(modelId)) {
+            if (currentSettings.requestFormat !== 'translategemma') {
+                // Auto-switch to TranslateGemma format
+                elements.requestFormat.value = 'translategemma';
+                currentSettings.requestFormat = 'translategemma';
+                updateFormatDescription('translategemma');
+                elements.customPrompts.hidden = true;
+                showToast('Switched to TranslateGemma format');
+            }
+        }
+
         saveCurrentSettings();
     });
 
@@ -421,6 +545,26 @@ function setupEventListeners() {
             }
         });
     });
+
+    // Open options page
+    if (elements.openOptions) {
+        elements.openOptions.addEventListener('click', () => {
+            browserAPI.runtime.openOptionsPage();
+        });
+    }
+
+    // Reset settings to defaults
+    if (elements.resetSettings) {
+        elements.resetSettings.addEventListener('click', async () => {
+            currentSettings = { ...DEFAULT_SETTINGS };
+            await browserAPI.runtime.sendMessage({
+                type: 'SAVE_SETTINGS',
+                settings: currentSettings
+            });
+            applySettingsToUI();
+            showToast('Settings reset to defaults');
+        });
+    }
 }
 
 // Initialize on DOM ready

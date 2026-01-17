@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local LLM Translator - Settings</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 Local LLM Translator Settings</h1>
+            <p class="subtitle">Configure your privacy-first translation extension</p>
+        </header>
+
+        <main>
+            <!-- Provider Settings -->
+            <section class="settings-section">
+                <h2>🔌 Provider Configuration</h2>
+
+                <div class="form-group">
+                    <label for="providerSelect">Provider</label>
+                    <select id="providerSelect">
+                        <option value="auto">Auto-detect</option>
+                        <option value="ollama">Ollama</option>
+                        <option value="lmstudio">LM Studio</option>
+                    </select>
+                    <p class="hint">Auto-detect will try both providers and use whichever responds first.</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="ollamaUrl">Ollama URL</label>
+                        <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="lmstudioUrl">LM Studio URL</label>
+                        <input type="text" id="lmstudioUrl" placeholder="http://localhost:1234">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="modelSelect">Preferred Model</label>
+                    <div class="select-with-btn">
+                        <select id="modelSelect">
+                            <option value="">Loading models...</option>
+                        </select>
+                        <button id="refreshModels" class="icon-btn" title="Refresh models">🔄</button>
+                    </div>
+                    <p class="hint">Select the model to use for translations.</p>
+                </div>
+            </section>
+
+            <!-- Translation Settings -->
+            <section class="settings-section">
+                <h2>🌍 Translation Settings</h2>
+
+                <div class="form-group">
+                    <label for="targetLanguage">Target Language</label>
+                    <select id="targetLanguage">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+
+                <div class="form-group" id="sourceLanguageGroup" hidden>
+                    <label for="sourceLanguage">Source Language (for TranslateGemma)</label>
+                    <select id="sourceLanguage">
+                        <option value="auto">Auto-detect from page</option>
+                        <!-- Populated dynamically -->
+                    </select>
+                    <p class="hint">TranslateGemma requires explicit source language. Auto-detect reads from page's lang
+                        attribute.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="requestFormat">Request Format</label>
+                    <select id="requestFormat">
+                        <option value="default">Default (JSON output)</option>
+                        <option value="translategemma">TranslateGemma</option>
+                        <option value="hunyuan">Hunyuan-MT</option>
+                        <option value="simple">Simple (Line-by-line)</option>
+                        <option value="custom">Custom</option>
+                    </select>
+                    <p id="formatDescription" class="hint format-description"></p>
+                </div>
+
+                <!-- Prompt Editor -->
+                <div class="form-group prompt-editor" id="promptEditor">
+                    <label>Prompt Template <span class="hint">(editable)</span></label>
+                    <div class="variables-hint">
+                        Variables: <code>{{targetLanguage}}</code> <code>{{targetCode}}</code>
+                        <code>{{sourceLang}}</code> <code>{{sourceCode}}</code> <code>{{texts}}</code>
+                    </div>
+                    <label for="systemPrompt" class="sub-label">System Prompt:</label>
+                    <div class="editor-container">
+                        <div class="editor-backdrop" id="systemPromptBackdrop"></div>
+                        <textarea id="systemPrompt" rows="4" placeholder="System prompt..."></textarea>
+                    </div>
+
+                    <label for="userPrompt" class="sub-label">User Prompt:</label>
+                    <div class="editor-container">
+                        <div class="editor-backdrop" id="userPromptBackdrop"></div>
+                        <textarea id="userPrompt" rows="4" placeholder="User prompt template..."></textarea>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Settings -->
+            <section class="settings-section">
+                <h2>⚡ Performance</h2>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="maxTokens">Max Tokens per Batch</label>
+                        <input type="number" id="maxTokens" min="100" max="8000" step="100">
+                        <p class="hint">Higher values = fewer API calls, but may hit model limits.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="maxItems">Max Items per Batch</label>
+                        <input type="number" id="maxItems" min="1" max="50" step="1">
+                        <p class="hint">Lower values = faster visual feedback as translations appear.</p>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="temperature">Temperature: <span id="temperatureValue">0.3</span></label>
+                    <input type="range" id="temperature" min="0" max="1" step="0.1">
+                    <p class="hint">Lower = more consistent translations. Higher = more creative.</p>
+                </div>
+            </section>
+
+            <!-- Output Settings -->
+            <section class="settings-section">
+                <h2>📤 Output Settings</h2>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="useStructuredOutput" checked>
+                    <label for="useStructuredOutput">Use structured JSON output</label>
+                    <p class="hint">Requests JSON format from the model. Disable if model struggles with JSON.</p>
+                </div>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="showGlow" checked>
+                    <label for="showGlow">Show translation glow effect</label>
+                    <p class="hint">Visual indicator when text has been translated.</p>
+                </div>
+            </section>
+
+            <!-- Custom Prompts -->
+            <section class="settings-section" id="customPromptsSection" hidden>
+                <h2>✏️ Custom Prompts</h2>
+                <p class="section-description">Customize the prompts sent to the model. Available variables:</p>
+                <div class="variables-list">
+                    <code>{{targetLanguage}}</code>
+                    <code>{{texts}}</code>
+                    <code>{{sourceLang}}</code>
+                    <code>{{sourceCode}}</code>
+                    <code>{{targetLang}}</code>
+                    <code>{{targetCode}}</code>
+                </div>
+
+                <div class="form-group">
+                    <label for="customSystem">System Prompt</label>
+                    <textarea id="customSystem" rows="4"
+                        placeholder="Custom system prompt (leave empty for no system prompt)"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="customUser">User Prompt Template</label>
+                    <textarea id="customUser" rows="6" placeholder="Custom user prompt template"></textarea>
+                </div>
+            </section>
+
+            <!-- LM Studio TranslateGemma Help -->
+            <section class="settings-section info-section" id="translateGemmaHelp" hidden>
+                <h2>ℹ️ TranslateGemma + LM Studio</h2>
+                <p>LM Studio may need a custom chat template for TranslateGemma to work correctly. Go to your model's
+                    settings in LM Studio and set the chat template to:</p>
+                <pre id="lmstudioTemplate">{{ bos_token }}
+{%- for message in messages -%}
+    {%- if message['role'] == 'user' or message['role'] == 'system' -%}
+        {{ '&lt;start_of_turn&gt;user\n' + message['content'] | trim + '&lt;end_of_turn&gt;\n' }}
+    {%- elif message['role'] == 'assistant' -%}
+        {{ '&lt;start_of_turn&gt;model\n' + message['content'] | trim + '&lt;end_of_turn&gt;\n' }}
+    {%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+    {{ '&lt;start_of_turn&gt;model\n' }}
+{%- endif -%}</pre>
+                <button id="copyTemplate" class="secondary-btn">📋 Copy Template</button>
+            </section>
+        </main>
+
+        <footer>
+            <div class="button-row">
+                <button id="saveSettings" class="primary-btn">💾 Save Settings</button>
+                <button id="resetSettings" class="danger-btn">🔄 Reset to Defaults</button>
+            </div>
+            <p class="privacy-note">🔒 All translations stay on your device. No data is sent to external servers.</p>
+        </footer>
+    </div>
+
+    <div id="toast" class="toast">
+        <span class="toast-icon">✅</span>
+        <span class="toast-message">Settings saved!</span>
+    </div>
+
+    <script src="../languages.js"></script>
+    <script src="options.js"></script>
+</body>
+
+</html>

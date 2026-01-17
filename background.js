@@ -6,6 +6,12 @@
 // Use browser API with chrome fallback
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 
+// Import languages
+// Import languages (for Service Worker context)
+if (typeof importScripts === 'function') {
+    importScripts('languages.js');
+}
+
 // ============================================================================
 // Settings & Constants
 // ============================================================================
@@ -16,27 +22,19 @@ const DEFAULT_SETTINGS = {
     lmstudioUrl: 'http://localhost:1234',
     selectedModel: '',
     targetLanguage: 'en',
+    sourceLanguage: 'auto', // 'auto' = detect from page, or specific code
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
     useAdvanced: false,
     customSystemPrompt: '',
     customUserPromptTemplate: '',
-    requestFormat: 'default', // 'default', 'hunyuan', 'simple', 'custom'
+    requestFormat: 'default', // 'default', 'translategemma', 'hunyuan', 'simple', 'custom'
     temperature: 0.3,
     useStructuredOutput: true,
-    showGlow: true
+    showGlow: false  // Disabled by default
 };
 
-const LANGUAGES = {
-    en: 'English', es: 'Spanish', fr: 'French', de: 'German',
-    it: 'Italian', pt: 'Portuguese', ru: 'Russian', zh: 'Chinese',
-    ja: 'Japanese', ko: 'Korean', ar: 'Arabic', hi: 'Hindi',
-    nl: 'Dutch', pl: 'Polish', tr: 'Turkish', vi: 'Vietnamese',
-    th: 'Thai', sv: 'Swedish', da: 'Danish', fi: 'Finnish',
-    no: 'Norwegian', cs: 'Czech', el: 'Greek', he: 'Hebrew',
-    hu: 'Hungarian', id: 'Indonesian', ms: 'Malay', ro: 'Romanian',
-    uk: 'Ukrainian'
-};
+
 
 const PROMPT_TEMPLATES = {
     default: {
@@ -45,6 +43,15 @@ Respond ONLY with a JSON object in this exact format:
 {"translations": [{"id": 0, "text": "translated text"}, {"id": 1, "text": "another translation"}]}
 Maintain the original meaning, tone, and formatting. Do not add explanations.`,
         user: `Translate the following texts to {{targetLanguage}}:\n{{texts}}`
+    },
+    translategemma: {
+        // TranslateGemma EXACT format - do not modify
+        system: '',
+        user: `You are a professional {{sourceLang}} ({{sourceCode}}) to {{targetLang}} ({{targetCode}}) translator. Your goal is to accurately convey the meaning and nuances of the original {{sourceLang}} text while adhering to {{targetLang}} grammar, vocabulary, and cultural sensitivities.
+Produce only the {{targetLang}} translation, without any additional explanations or commentary. Please translate the following {{sourceLang}} text into {{targetLang}}:
+
+
+{{texts}}`
     },
     simple: {
         system: `You are a translator. Translate to {{targetLanguage}}. Output JSON only:
@@ -189,9 +196,7 @@ async function listModels(settings, useCache = true) {
 // Translation Logic
 // ============================================================================
 
-function getLanguageName(code) {
-    return LANGUAGES[code] || code;
-}
+
 
 function formatTextsForPrompt(textItems) {
     return textItems.map(item => `[${item.id}]: ${item.text}`).join('\n');
@@ -203,6 +208,18 @@ function buildPrompt(template, vars) {
         result = result.replace(new RegExp(`{{${key}}}`, 'g'), value);
     }
     return result;
+}
+
+// Clean translation text - remove ID prefixes and HTML garbage that LLM might include
+function cleanTranslationText(text) {
+    if (!text) return text;
+    // Remove patterns like "[99]: ", "[99]:", "99: ", "99:" at start of text
+    let cleaned = text.replace(/^\[?\d+\]?:\s*/g, '');
+    // Remove HTML tags that might leak through (like </div>, <span>, etc.)
+    cleaned = cleaned.replace(/<\/?[a-z][a-z0-9]*[^>]*>/gi, '');
+    // Remove multiple spaces
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    return cleaned.trim();
 }
 
 function parseTranslationResponse(response, originalItems) {
@@ -241,6 +258,12 @@ function parseTranslationResponse(response, originalItems) {
 
     // If JSON parsing worked, check if we need to remap IDs
     if (translations.length > 0) {
+        // Clean up translations - remove any ID prefixes from the text
+        translations = translations.map(t => ({
+            ...t,
+            text: cleanTranslationText(t.text)
+        }));
+
         // Check if LLM returned sequential IDs (0, 1, 2...) instead of our IDs
         const llmIds = translations.map(t => t.id);
         const ourIds = originalItems.map(t => t.id);
@@ -427,14 +450,31 @@ async function translate(textItems, targetLanguage, settings) {
 
     // Build prompts
     const textsFormatted = formatTextsForPrompt(textItems);
-    const userPrompt = buildPrompt(userPromptTemplate, {
-        targetLanguage: getLanguageName(targetLanguage),
-        texts: textsFormatted
-    });
 
-    const finalSystemPrompt = buildPrompt(systemPrompt, {
-        targetLanguage: getLanguageName(targetLanguage)
-    });
+    // Prepare variables for template substitution
+    const targetLangName = getLanguageName(targetLanguage);
+    const targetLangCode = targetLanguage.toUpperCase();
+
+    // Source language handling (for TranslateGemma)
+    // Settings.sourceLanguage is already populated from the message handler
+    let sourceLangCode = (settings.sourceLanguage && settings.sourceLanguage !== 'auto')
+        ? settings.sourceLanguage
+        : 'en';
+    let sourceLangName = getLanguageName(sourceLangCode);
+
+    // Build template variables
+    const templateVars = {
+        targetLanguage: targetLangName,
+        texts: textsFormatted,
+        // TranslateGemma-specific variables
+        sourceLang: sourceLangName,
+        sourceCode: sourceLangCode.toUpperCase(),
+        targetLang: targetLangName,
+        targetCode: targetLangCode
+    };
+
+    const userPrompt = buildPrompt(userPromptTemplate, templateVars);
+    const finalSystemPrompt = buildPrompt(systemPrompt, templateVars);
 
     // Call the appropriate provider
     let response;
@@ -486,10 +526,15 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
 
                 case 'TRANSLATE':
+                    // Pass sourceLanguage for TranslateGemma support
+                    const settingsWithSource = {
+                        ...settings,
+                        sourceLanguage: message.sourceLanguage || settings.sourceLanguage || 'en'
+                    };
                     const translations = await translate(
                         message.texts,
                         message.targetLanguage,
-                        settings
+                        settingsWithSource
                     );
                     sendResponse({ translations });
                     break;

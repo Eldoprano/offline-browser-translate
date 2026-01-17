@@ -18,14 +18,10 @@
     <header>
       <h1>🌐 Local Translator</h1>
       <p class="subtitle">Privacy-first translation with local LLMs</p>
-    </header>
-
-    <section class="status-section">
-      <div class="status-indicator" id="providerStatus">
+      <div class="status-dot-wrapper" id="providerStatus" title="Checking...">
         <span class="status-dot"></span>
-        <span class="status-text">Checking providers...</span>
       </div>
-    </section>
+    </header>
 
     <section class="main-controls">
       <div class="form-group">
@@ -39,35 +35,16 @@
       <div class="form-group">
         <label for="languageSelect">Translate to</label>
         <select id="languageSelect">
-          <option value="en">English</option>
-          <option value="es">Spanish</option>
-          <option value="fr">French</option>
-          <option value="de">German</option>
-          <option value="it">Italian</option>
-          <option value="pt">Portuguese</option>
-          <option value="ru">Russian</option>
-          <option value="zh">Chinese</option>
-          <option value="ja">Japanese</option>
-          <option value="ko">Korean</option>
-          <option value="ar">Arabic</option>
-          <option value="hi">Hindi</option>
-          <option value="nl">Dutch</option>
-          <option value="pl">Polish</option>
-          <option value="tr">Turkish</option>
-          <option value="vi">Vietnamese</option>
-          <option value="th">Thai</option>
-          <option value="sv">Swedish</option>
-          <option value="da">Danish</option>
-          <option value="fi">Finnish</option>
-          <option value="no">Norwegian</option>
-          <option value="cs">Czech</option>
-          <option value="el">Greek</option>
-          <option value="he">Hebrew</option>
-          <option value="hu">Hungarian</option>
-          <option value="id">Indonesian</option>
-          <option value="ms">Malay</option>
-          <option value="ro">Romanian</option>
-          <option value="uk">Ukrainian</option>
+          <!-- Populated dynamically from languages.js -->
+        </select>
+      </div>
+
+      <!-- Source language (only for TranslateGemma) -->
+      <div class="form-group source-lang-group" id="sourceLangGroup" hidden>
+        <label>Source language: <span id="detectedLang" class="detected-lang">detecting...</span></label>
+        <select id="sourceLangOverride" class="small-select">
+          <option value="auto">Use detected</option>
+          <!-- Populated dynamically -->
         </select>
       </div>
 
@@ -79,8 +56,8 @@
         <button id="cancelBtn" class="cancel-btn" hidden title="Cancel translation">
           ✕
         </button>
-        <button id="restoreBtn" class="secondary-btn" title="Restore original text">
-          Restore
+        <button id="restoreBtn" class="secondary-btn" title="Toggle original/translated">
+          Original
         </button>
       </div>
     </section>
@@ -132,10 +109,12 @@
         <label for="requestFormat">Request Format</label>
         <select id="requestFormat">
           <option value="default">Default (JSON output)</option>
+          <option value="translategemma">TranslateGemma</option>
           <option value="hunyuan">Hunyuan-MT</option>
           <option value="simple">Simple (Line-by-line)</option>
           <option value="custom">Custom</option>
         </select>
+        <p id="formatDescription" class="format-description"></p>
       </div>
 
       <div class="form-group checkbox-group">
@@ -169,7 +148,11 @@
         </div>
       </div>
 
-      <button id="saveSettings" class="primary-btn small">Save Settings</button>
+      <div class="button-row">
+        <button id="saveSettings" class="primary-btn small">Save Settings</button>
+        <button id="openOptions" class="secondary-btn small" title="Open full settings page">⚙️ More Settings</button>
+      </div>
+      <button id="resetSettings" class="text-btn">Reset to defaults</button>
     </section>
 
     <!-- Toast Notification -->
@@ -183,6 +166,7 @@
     </footer>
   </div>
 
+  <script src="../languages.js"></script>
   <script src="popup.js"></script>
 </body>
 

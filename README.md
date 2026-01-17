@@ -15,7 +15,7 @@ You need one of these running locally:
 - **[Ollama](https://ollama.ai/)** (default: `http://localhost:11434`)
 - **[LMStudio](https://lmstudio.ai/)** (default: `http://localhost:1234`)
 
-With a translation-capable model loaded (e.g., `tencent.hunyuan-mt`, `qwen3`, `mistral`, etc.)
+With a translation-capable model loaded (e.g. `TranslateGemma`, `tencent.hunyuan-mt`, `qwen3`, etc.)
 
 ## Installation
 

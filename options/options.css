@@ -1,0 +1,476 @@
+/* Options Page Styles for Local LLM Translator (Everforest Dark Theme) */
+
+:root {
+    /* Everforest Dark Medium Contrast */
+    --bg-dim: #1E2326;
+    --bg0: #272E33;
+    --bg1: #2E383C;
+    --bg2: #374145;
+    --bg3: #414B50;
+    --bg4: #495156;
+    --bg5: #4F5B58;
+
+    --fg: #D3C6AA;
+    --red: #E67E80;
+    --orange: #E69875;
+    --yellow: #DBBC7F;
+    --green: #A7C080;
+    --aqua: #83C092;
+    --blue: #7FBBB3;
+    --purple: #D699B6;
+    --grey0: #7A8478;
+    --grey1: #859289;
+    --grey2: #9DA9A0;
+
+    /* Semantic mappings */
+    --bg-primary: var(--bg-dim);
+    --bg-secondary: var(--bg0);
+    --bg-tertiary: var(--bg1);
+    --bg-elevated: var(--bg2);
+    --text-primary: var(--fg);
+    --text-secondary: var(--grey1);
+    --text-muted: var(--grey0);
+    --accent: var(--green);
+    --accent-hover: var(--aqua);
+    --accent-glow: rgba(167, 192, 128, 0.25);
+    --success: var(--green);
+    --warning: var(--yellow);
+    --error: var(--red);
+    --border-radius: 8px;
+    --transition: all 0.2s ease;
+}
+
+/* Select with inline button */
+.select-with-btn {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.select-with-btn select {
+    flex: 1;
+}
+
+.icon-btn {
+    padding: 8px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--bg-tertiary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.icon-btn:hover {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border-color: var(--accent);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Header */
+header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+/* Sections */
+.settings-section {
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--bg-tertiary);
+}
+
+.settings-section h2 {
+    font-size: 1.1rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.section-description {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+
+/* Form Elements */
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 600px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 0.4rem;
+    color: var(--text-primary);
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+    width: 100%;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid var(--bg-tertiary);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+textarea {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    resize: vertical;
+}
+
+input[type="range"] {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-secondary);
+    appearance: none;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.1);
+}
+
+.hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+}
+
+.format-description {
+    font-style: italic;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    margin-top: 0.5rem;
+}
+
+/* Prompt Editor */
+.prompt-editor {
+    background: var(--bg-secondary);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-top: 0.5rem;
+}
+
+.prompt-editor .variables-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.prompt-editor .variables-hint code {
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--aqua);
+    font-size: 0.75rem;
+}
+
+.prompt-editor .sub-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+/* Editor container to stack textarea and backdrop */
+.editor-container {
+    position: relative;
+    width: 100%;
+    /* Ensure backdrop and textarea grow together */
+}
+
+/* Base styles for both layers */
+.editor-backdrop,
+.prompt-editor textarea {
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 10px;
+    border-radius: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    /* Important to match wrapping */
+    letter-spacing: 0px;
+    /* Prevent font rendering differences */
+}
+
+/* The backdrop layer with colors */
+.editor-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    color: transparent;
+    /* Text is transparent, only bg colors show */
+    background-color: transparent;
+    pointer-events: none;
+    /* Let clicks pass through */
+    height: 100%;
+    margin: 0;
+    border: 1px solid transparent;
+    /* Match textarea border */
+    overflow: hidden;
+}
+
+/* The textarea on top */
+.prompt-editor textarea {
+    position: relative;
+    z-index: 2;
+    background-color: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--bg-tertiary);
+    resize: vertical;
+    margin: 0;
+    /* Override default input margin */
+    display: block;
+    /* Remove inline gaps */
+}
+
+.prompt-editor textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Highlight style */
+.highlight-var {
+    color: var(--aqua);
+    background-color: rgba(127, 187, 179, 0.15);
+    /* Low opacity aqua */
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+/* Checkbox */
+.checkbox-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.checkbox-group label {
+    flex: 1;
+    margin-bottom: 0;
+    cursor: pointer;
+}
+
+.checkbox-group .hint {
+    width: 100%;
+    margin-left: 26px;
+}
+
+/* Variables list */
+.variables-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.variables-list code {
+    background: var(--bg-secondary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--accent);
+}
+
+/* Pre block for template */
+pre {
+    background: var(--bg-secondary);
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    margin: 0.75rem 0;
+    border: 1px solid var(--bg-tertiary);
+}
+
+/* Info section */
+.info-section {
+    border-color: var(--orange);
+    background: rgba(230, 152, 117, 0.08);
+}
+
+.info-section h2 {
+    color: var(--orange);
+}
+
+/* Buttons */
+.button-row {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin: 1.5rem 0;
+}
+
+button {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.primary-btn {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
+
+.primary-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.secondary-btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--bg-tertiary);
+}
+
+.secondary-btn:hover {
+    background: var(--bg-tertiary);
+}
+
+.danger-btn {
+    background: transparent;
+    color: var(--red);
+    border: 1px solid var(--red);
+}
+
+.danger-btn:hover {
+    background: rgba(230, 126, 128, 0.1);
+}
+
+/* Footer */
+footer {
+    text-align: center;
+    padding-top: 1rem;
+    border-top: 1px solid var(--bg-tertiary);
+}
+
+.privacy-note {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+}
+
+/* Toast */
+.toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--bg-elevated);
+    border: 1px solid var(--accent);
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 1000;
+}
+
+.toast.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.toast-icon {
+    font-size: 1.1rem;
+}
+
+.toast-message {
+    font-size: 0.9rem;
+}
