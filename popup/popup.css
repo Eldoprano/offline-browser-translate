@@ -1,0 +1,500 @@
+/* Local LLM Translator - Popup Styles (Everforest Dark Theme) */
+
+:root {
+  /* Everforest Dark Medium Contrast */
+  --bg-dim: #1E2326;
+  --bg0: #272E33;
+  --bg1: #2E383C;
+  --bg2: #374145;
+  --bg3: #414B50;
+  --bg4: #495156;
+  --bg5: #4F5B58;
+
+  --fg: #D3C6AA;
+  --red: #E67E80;
+  --orange: #E69875;
+  --yellow: #DBBC7F;
+  --green: #A7C080;
+  --aqua: #83C092;
+  --blue: #7FBBB3;
+  --purple: #D699B6;
+  --grey0: #7A8478;
+  --grey1: #859289;
+  --grey2: #9DA9A0;
+
+  /* Semantic mappings */
+  --bg-primary: var(--bg-dim);
+  --bg-secondary: var(--bg0);
+  --bg-tertiary: var(--bg1);
+  --bg-elevated: var(--bg2);
+  --text-primary: var(--fg);
+  --text-secondary: var(--grey1);
+  --text-muted: var(--grey0);
+  --accent: var(--green);
+  --accent-hover: var(--aqua);
+  --accent-glow: rgba(167, 192, 128, 0.25);
+  --success: var(--green);
+  --warning: var(--yellow);
+  --error: var(--red);
+  --border-radius: 8px;
+  --transition: all 0.2s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  width: 320px;
+  min-height: 400px;
+}
+
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Header */
+header {
+  text-align: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--green);
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Status Section */
+.status-section {
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  padding: 10px 12px;
+  border: 1px solid var(--bg-tertiary);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+.status-dot.connected {
+  background: var(--success);
+  animation: none;
+}
+
+.status-dot.error {
+  background: var(--error);
+  animation: none;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Form Groups */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group.checkbox-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-group.checkbox-group label {
+  color: var(--text-primary);
+}
+
+select,
+input[type="text"],
+input[type="number"],
+textarea {
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: var(--transition);
+}
+
+select:hover,
+input:hover,
+textarea:hover {
+  border-color: var(--accent);
+}
+
+select:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+select:disabled,
+input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* Main Controls with Refresh Button */
+.main-controls .form-group:first-child {
+  position: relative;
+}
+
+.main-controls .form-group:first-child select {
+  padding-right: 40px;
+}
+
+.icon-btn {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.icon-btn:hover {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+/* Buttons */
+.button-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.primary-btn {
+  flex: 1;
+  padding: 12px 16px;
+  background: var(--green);
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--bg-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.primary-btn:hover:not(:disabled) {
+  background: var(--aqua);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-btn.small {
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+.primary-btn .btn-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secondary-btn {
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.secondary-btn:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.cancel-btn {
+  padding: 12px 14px;
+  background: var(--red);
+  border: none;
+  border-radius: var(--border-radius);
+  color: var(--bg-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cancel-btn:hover {
+  background: #f28b8d;
+  transform: translateY(-1px);
+}
+
+/* Toggle Button */
+.settings-toggle {
+  margin-top: -8px;
+}
+
+.toggle-btn {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px dashed var(--bg3);
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: var(--transition);
+}
+
+.toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toggle-arrow {
+  transition: transform 0.2s;
+}
+
+.toggle-btn.active .toggle-arrow {
+  transform: rotate(180deg);
+}
+
+/* Advanced Settings */
+.advanced-settings {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+
+#temperatureValue {
+  font-size: 12px;
+  color: var(--aqua);
+  font-weight: 600;
+}
+
+/* Footer */
+footer {
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+
+footer p {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+footer p::before {
+  content: '🔒';
+}
+
+/* Main Controls Layout */
+.main-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg4);
+}
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Toast Notification */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 10px 20px;
+  border-radius: var(--border-radius);
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Variable Highlighting in Textarea */
+.prompt-editor-container {
+  position: relative;
+  width: 100%;
+}
+
+.prompt-variables-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  display: flex;
+  gap: 8px;
+}
+
+.var-tag {
+  background: var(--bg-tertiary);
+  color: var(--aqua);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.var-tag:hover {
+  background: var(--bg4);
+  color: var(--green);
+}
+
+textarea.highlight-vars {
+  font-family: 'Consolas', 'Monaco', monospace;
+  line-height: 1.5;
+}
+
+/* We can't do real syntax highlighting in a textarea, 
+   so we'll use a backdrop method if needed, but for now 
+   simple variable insertion buttons are a good step */

@@ -1,0 +1,427 @@
+/**
+ * Popup Script for Local LLM Translator
+ */
+
+// Use browser API with chrome fallback for Firefox compatibility
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+
+// Import default settings
+const DEFAULT_SETTINGS = {
+    provider: 'auto',
+    ollamaUrl: 'http://localhost:11434',
+    lmstudioUrl: 'http://localhost:1234',
+    selectedModel: '',
+    targetLanguage: 'en',
+    maxTokensPerBatch: 2000,
+    maxItemsPerBatch: 8,
+    useAdvanced: false,
+    customSystemPrompt: '',
+    customUserPromptTemplate: '',
+    requestFormat: 'default',
+    temperature: 0.3,
+    useStructuredOutput: true,
+    showGlow: true
+};
+
+// DOM Elements
+const elements = {
+    providerStatus: document.getElementById('providerStatus'),
+    modelSelect: document.getElementById('modelSelect'),
+    refreshModels: document.getElementById('refreshModels'),
+    languageSelect: document.getElementById('languageSelect'),
+    translateBtn: document.getElementById('translateBtn'),
+    cancelBtn: document.getElementById('cancelBtn'),
+    restoreBtn: document.getElementById('restoreBtn'),
+    toggleAdvanced: document.getElementById('toggleAdvanced'),
+    advancedSection: document.getElementById('advancedSection'),
+    providerSelect: document.getElementById('providerSelect'),
+    ollamaUrl: document.getElementById('ollamaUrl'),
+    lmstudioUrl: document.getElementById('lmstudioUrl'),
+    maxTokens: document.getElementById('maxTokens'),
+    maxItems: document.getElementById('maxItems'),
+    temperature: document.getElementById('temperature'),
+    temperatureValue: document.getElementById('temperatureValue'),
+    requestFormat: document.getElementById('requestFormat'),
+    useStructuredOutput: document.getElementById('useStructuredOutput'),
+    showGlow: document.getElementById('showGlow'),
+    customPrompts: document.getElementById('customPrompts'),
+    customSystem: document.getElementById('customSystem'),
+    customUser: document.getElementById('customUser'),
+    saveSettings: document.getElementById('saveSettings'),
+    toast: document.getElementById('toast')
+};
+
+let currentSettings = { ...DEFAULT_SETTINGS };
+let isTranslating = false;
+
+// Show toast notification
+function showToast(message, type = 'success') {
+    const toast = elements.toast;
+    const icon = toast.querySelector('.toast-icon');
+    const msg = toast.querySelector('.toast-message');
+
+    icon.textContent = type === 'success' ? '✅' : '❌';
+    msg.textContent = message;
+
+    if (type === 'error') {
+        toast.style.borderColor = 'var(--red)';
+        toast.style.color = 'var(--red)';
+    } else {
+        toast.style.borderColor = 'var(--accent)';
+        toast.style.color = 'var(--accent)';
+    }
+
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
+// Initialize popup
+async function init() {
+    await loadSettings();
+    applySettingsToUI();
+    await checkProviders();
+    await loadModels();
+    setupEventListeners();
+    await checkTranslationStatus();
+}
+
+// Check if translation is already running in active tab
+async function checkTranslationStatus() {
+    try {
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) {
+            const response = await browserAPI.tabs.sendMessage(tab.id, { type: 'GET_TRANSLATION_STATUS' });
+            if (response && response.isTranslating) {
+                isTranslating = true;
+                elements.translateBtn.disabled = true;
+                elements.translateBtn.querySelector('.btn-text').hidden = true;
+                elements.translateBtn.querySelector('.btn-loading').hidden = false;
+                elements.cancelBtn.hidden = false;
+            }
+        }
+    } catch (e) {
+        // Content script might not be injected yet, which is fine
+    }
+}
+
+// Load settings from storage
+async function loadSettings() {
+    try {
+        const response = await browserAPI.runtime.sendMessage({ type: 'GET_SETTINGS' });
+        if (response.settings) {
+            currentSettings = { ...DEFAULT_SETTINGS, ...response.settings };
+        }
+    } catch (e) {
+        console.error('Failed to load settings:', e);
+    }
+}
+
+// Apply settings to UI
+function applySettingsToUI() {
+    elements.languageSelect.value = currentSettings.targetLanguage;
+    elements.providerSelect.value = currentSettings.provider;
+    elements.ollamaUrl.value = currentSettings.ollamaUrl;
+    elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
+    elements.maxTokens.value = currentSettings.maxTokensPerBatch;
+    elements.maxItems.value = currentSettings.maxItemsPerBatch || 8;
+    elements.temperature.value = currentSettings.temperature;
+    elements.temperatureValue.textContent = currentSettings.temperature;
+    elements.requestFormat.value = currentSettings.requestFormat;
+    elements.useStructuredOutput.checked = currentSettings.useStructuredOutput;
+    elements.showGlow.checked = currentSettings.showGlow !== false;
+    elements.customSystem.value = currentSettings.customSystemPrompt || '';
+    elements.customUser.value = currentSettings.customUserPromptTemplate || '';
+
+    // Show custom prompts if custom format selected
+    elements.customPrompts.hidden = currentSettings.requestFormat !== 'custom';
+}
+
+// Check which providers are available
+async function checkProviders() {
+    const statusDot = elements.providerStatus.querySelector('.status-dot');
+    const statusText = elements.providerStatus.querySelector('.status-text');
+
+    try {
+        const response = await browserAPI.runtime.sendMessage({ type: 'DETECT_PROVIDERS' });
+
+        const providers = [];
+        if (response.ollama) providers.push('Ollama');
+        if (response.lmstudio) providers.push('LMStudio');
+
+        if (providers.length > 0) {
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = `Connected: ${providers.join(', ')}`;
+        } else {
+            statusDot.className = 'status-dot error';
+            statusText.textContent = 'No providers found';
+        }
+    } catch (e) {
+        statusDot.className = 'status-dot error';
+        statusText.textContent = 'Error checking providers';
+    }
+}
+
+// Load available models
+async function loadModels() {
+    elements.modelSelect.disabled = true;
+    elements.modelSelect.innerHTML = '<option value="">Loading models...</option>';
+
+    try {
+        const response = await browserAPI.runtime.sendMessage({ type: 'LIST_MODELS' });
+        const models = response.models || [];
+
+        if (models.length === 0) {
+            elements.modelSelect.innerHTML = '<option value="">No models found</option>';
+            return;
+        }
+
+        elements.modelSelect.innerHTML = models.map(m =>
+            `<option value="${m.id}" data-provider="${m.provider}">${m.name}</option>`
+        ).join('');
+
+        // Select previously selected model if available
+        if (currentSettings.selectedModel) {
+            const exists = models.some(m => m.id === currentSettings.selectedModel);
+            if (exists) {
+                elements.modelSelect.value = currentSettings.selectedModel;
+            }
+        }
+
+        elements.modelSelect.disabled = false;
+        elements.translateBtn.disabled = false;
+
+    } catch (e) {
+        console.error('Failed to load models:', e);
+        elements.modelSelect.innerHTML = '<option value="">Error loading models</option>';
+    }
+}
+
+// Save current settings
+async function saveCurrentSettings() {
+    currentSettings = {
+        ...currentSettings,
+        provider: elements.providerSelect.value,
+        ollamaUrl: elements.ollamaUrl.value,
+        lmstudioUrl: elements.lmstudioUrl.value,
+        selectedModel: elements.modelSelect.value,
+        targetLanguage: elements.languageSelect.value,
+        maxTokensPerBatch: parseInt(elements.maxTokens.value) || 2000,
+        maxItemsPerBatch: parseInt(elements.maxItems.value) || 8,
+        temperature: parseFloat(elements.temperature.value) || 0.3,
+        requestFormat: elements.requestFormat.value,
+        useStructuredOutput: elements.useStructuredOutput.checked,
+        showGlow: elements.showGlow.checked,
+        customSystemPrompt: elements.customSystem.value,
+        customUserPromptTemplate: elements.customUser.value
+    };
+
+    await browserAPI.runtime.sendMessage({
+        type: 'SAVE_SETTINGS',
+        settings: currentSettings
+    });
+}
+
+// Start translation
+async function startTranslation() {
+    if (isTranslating) return;
+
+    const model = elements.modelSelect.value;
+    if (!model) {
+        showToast('Please select a model first', 'error');
+        return;
+    }
+
+    isTranslating = true;
+    elements.translateBtn.disabled = true;
+    elements.translateBtn.querySelector('.btn-text').hidden = true;
+    elements.translateBtn.querySelector('.btn-loading').hidden = false;
+    elements.cancelBtn.hidden = false;
+
+    try {
+        // Save settings first
+        await saveCurrentSettings();
+
+        // Get current tab
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+
+        if (!tab || !tab.id) {
+            throw new Error('No active tab found');
+        }
+
+        // Try to inject content script
+        try {
+            await browserAPI.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js']
+            });
+            // Give it a moment to initialize
+            await new Promise(resolve => setTimeout(resolve, 100));
+        } catch (injectErr) {
+            console.log('Script injection note:', injectErr.message);
+            // May already be injected or page doesn't allow scripts
+        }
+
+        // Try to send message with retry
+        let lastError = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const response = await browserAPI.tabs.sendMessage(tab.id, {
+                    type: 'START_TRANSLATION',
+                    targetLanguage: currentSettings.targetLanguage,
+                    showGlow: currentSettings.showGlow
+                });
+                if (response && response.started) {
+                    return; // Success! UI stays in translating state
+                }
+            } catch (msgErr) {
+                lastError = msgErr;
+                console.log(`Attempt ${attempt + 1} failed:`, msgErr.message);
+                // Wait before retry
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
+        // If we get here, all attempts failed
+        throw new Error('Could not connect to page. Please refresh the page and try again.');
+
+    } catch (e) {
+        console.error('Translation error:', e);
+        showToast(`Error: ${e.message}`, 'error');
+
+        // Only reset UI on error
+        isTranslating = false;
+        elements.translateBtn.disabled = false;
+        elements.translateBtn.querySelector('.btn-text').hidden = false;
+        elements.translateBtn.querySelector('.btn-loading').hidden = true;
+        elements.cancelBtn.hidden = true;
+    }
+}
+
+// Cancel translation
+async function cancelTranslation() {
+    try {
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.id) {
+            await browserAPI.tabs.sendMessage(tab.id, { type: 'CANCEL_TRANSLATION' });
+        }
+    } catch (e) {
+        console.error('Cancel error:', e);
+    }
+
+    isTranslating = false;
+    elements.translateBtn.disabled = false;
+    elements.translateBtn.querySelector('.btn-text').hidden = false;
+    elements.translateBtn.querySelector('.btn-loading').hidden = true;
+    elements.cancelBtn.hidden = true;
+}
+
+// Restore original text
+async function restoreOriginal() {
+    try {
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+        await browserAPI.tabs.sendMessage(tab.id, { type: 'RESTORE_ORIGINAL' });
+    } catch (e) {
+        console.error('Restore error:', e);
+    }
+}
+
+// Setup event listeners
+function setupEventListeners() {
+    // Translate button
+    elements.translateBtn.addEventListener('click', startTranslation);
+
+    // Cancel button
+    elements.cancelBtn.addEventListener('click', cancelTranslation);
+
+    // Restore button
+    elements.restoreBtn.addEventListener('click', restoreOriginal);
+
+    // Refresh models
+    elements.refreshModels.addEventListener('click', async () => {
+        await checkProviders();
+        await loadModels();
+    });
+
+    // Toggle advanced settings
+    elements.toggleAdvanced.addEventListener('click', () => {
+        const isHidden = elements.advancedSection.hidden;
+        elements.advancedSection.hidden = !isHidden;
+        elements.toggleAdvanced.classList.toggle('active', !isHidden);
+    });
+
+    // Temperature slider
+    elements.temperature.addEventListener('input', (e) => {
+        elements.temperatureValue.textContent = e.target.value;
+    });
+
+    // Request format change
+    elements.requestFormat.addEventListener('change', (e) => {
+        elements.customPrompts.hidden = e.target.value !== 'custom';
+    });
+
+    // Save settings button
+    elements.saveSettings.addEventListener('click', async () => {
+        await saveCurrentSettings();
+        await checkProviders();
+        await loadModels();
+        showToast('Settings saved!');
+    });
+
+    // Auto-save model and language selection
+    elements.modelSelect.addEventListener('change', () => {
+        currentSettings.selectedModel = elements.modelSelect.value;
+        saveCurrentSettings();
+    });
+
+    elements.languageSelect.addEventListener('change', () => {
+        currentSettings.targetLanguage = elements.languageSelect.value;
+        saveCurrentSettings();
+    });
+
+    // Glow toggle - update in real-time
+    elements.showGlow.addEventListener('change', async () => {
+        currentSettings.showGlow = elements.showGlow.checked;
+        await saveCurrentSettings();
+        // Send to content script to update existing translations
+        try {
+            const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+            if (tab && tab.id) {
+                await browserAPI.tabs.sendMessage(tab.id, {
+                    type: 'SET_GLOW',
+                    enabled: currentSettings.showGlow
+                });
+            }
+        } catch (e) {
+            // Content script may not be loaded
+        }
+    });
+
+    // Variable helpers
+    document.querySelectorAll('.var-tag').forEach(tag => {
+        tag.addEventListener('click', () => {
+            const targetId = tag.dataset.target;
+            const textToInsert = tag.dataset.insert;
+            const textarea = document.getElementById(targetId);
+
+            if (textarea) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const text = textarea.value;
+                const before = text.substring(0, start);
+                const after = text.substring(end, text.length);
+
+                textarea.value = before + textToInsert + after;
+                textarea.selectionStart = textarea.selectionEnd = start + textToInsert.length;
+                textarea.focus();
+
+                // Trigger change to update settings
+                textarea.dispatchEvent(new Event('change'));
+            }
+        });
+    });
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', init);
