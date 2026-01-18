@@ -1,4 +1,6 @@
-# 🌐 Local LLM Translator
+<h1 align="center">
+  <img src="assets/logo.png" width="48" valign="middle"> Local LLM Translator
+</h1>
 
 A privacy-focused browser extension that translates web pages using local LLMs (Ollama or LMStudio). **Your data never leaves your machine.**
 
@@ -31,6 +33,12 @@ With a translation-capable model loaded (e.g. `TranslateGemma`, `tencent.hunyuan
 4. Select the extension folder
 
 **Coming Soon:** Extension in Chrome Web Store and Firefox Add-ons
+
+## Preview
+
+<p align="center">
+  <img src="assets/translating.png" width="600" alt="Extension Screenshot">
+</p>
 
 ## Usage
 
