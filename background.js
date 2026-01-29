@@ -272,7 +272,7 @@ function parseTranslationResponse(response, originalItems) {
         const idsMismatch = !llmIds.some(id => ourIds.includes(id));
 
         if (llmUsedSequential || idsMismatch) {
-            console.log('[Background] LLM used sequential IDs, remapping to original IDs');
+            // console.log('[Background] LLM used sequential IDs, remapping to original IDs');
             // Map sequential LLM IDs to our original IDs
             translations = translations.map((t, index) => ({
                 id: originalItems[index]?.id ?? t.id,
@@ -285,7 +285,7 @@ function parseTranslationResponse(response, originalItems) {
     }
 
     // Fallback: parse line-by-line format using ORIGINAL item IDs
-    console.log('[Background] Using fallback line-by-line parsing');
+    // console.log('[Background] Using fallback line-by-line parsing');
     const lines = response.split('\n').filter(l => l.trim());
 
     for (let i = 0; i < Math.min(lines.length, expectedCount); i++) {
@@ -311,7 +311,7 @@ function parseTranslationResponse(response, originalItems) {
         }
     }
 
-    console.log(`[Background] Fallback parsed ${translations.length} translations`);
+    // console.log(`[Background] Fallback parsed ${translations.length} translations`);
     return translations;
 }
 
@@ -485,8 +485,8 @@ async function translate(textItems, targetLanguage, settings) {
         response = await callLMStudio(settings, modelId, finalSystemPrompt, userPrompt);
     }
 
-    console.log(`[Background] Raw LLM response (first 500 chars):`, response.substring(0, 500));
-    console.log(`[Background] Sent ${textItems.length} items, IDs:`, textItems.map(t => t.id));
+    // console.log(`[Background] Raw LLM response (first 500 chars):`, response.substring(0, 500));
+    // console.log(`[Background] Sent ${textItems.length} items, IDs:`, textItems.map(t => t.id));
 
     // Parse response - pass original items so we can use their IDs in fallback
     return parseTranslationResponse(response, textItems);
@@ -497,7 +497,7 @@ async function translate(textItems, targetLanguage, settings) {
 // ============================================================================
 
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('[Background] Received message:', message.type);
+    // console.log('[Background] Received message:', message.type);
 
     (async () => {
         try {
@@ -522,7 +522,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
 
                 case 'LIST_MODELS':
-                    const models = await listModels(settings);
+                    // Pass forceRefresh to bypass cache when user clicks refresh
+                    const models = await listModels(settings, !message.forceRefresh);
                     sendResponse({ models });
                     break;
 

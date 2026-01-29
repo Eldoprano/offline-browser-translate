@@ -316,12 +316,12 @@ async function checkProviders() {
 }
 
 // Load available models
-async function loadModels() {
+async function loadModels(forceRefresh = false) {
     elements.modelSelect.disabled = true;
     elements.modelSelect.innerHTML = '<option value="">Loading models...</option>';
 
     try {
-        const response = await browserAPI.runtime.sendMessage({ type: 'LIST_MODELS' });
+        const response = await browserAPI.runtime.sendMessage({ type: 'LIST_MODELS', forceRefresh });
         const models = response.models || [];
 
         if (models.length === 0) {
@@ -329,9 +329,14 @@ async function loadModels() {
             return;
         }
 
-        elements.modelSelect.innerHTML = models.map(m =>
-            `<option value="${m.id}" data-provider="${m.provider}">${m.name}</option>`
-        ).join('');
+        elements.modelSelect.innerHTML = '';
+        models.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.id;
+            option.dataset.provider = m.provider;
+            option.textContent = m.name;
+            elements.modelSelect.appendChild(option);
+        });
 
         // Select previously selected model if available
         if (currentSettings.selectedModel) {
@@ -513,7 +518,7 @@ function setupEventListeners() {
     // Refresh models
     elements.refreshModels.addEventListener('click', async () => {
         await checkProviders();
-        await loadModels();
+        await loadModels(true); // Force refresh, bypass cache
     });
 
     // Toggle advanced settings

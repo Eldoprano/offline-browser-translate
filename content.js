@@ -325,7 +325,8 @@ function replaceTextNode(id, translatedText) {
         entry.translated = true;
         entry.translatedText = translatedText;
         translatedNodeSet.add(node);
-        console.log(`[Translator] Replaced node ${id}: "${originalText.substring(0, 30)}..." -> "${translatedText.substring(0, 30)}..."`);
+        // Debug logging disabled to reduce console noise
+        // console.log(`[Translator] Replaced node ${id}: "${originalText.substring(0, 30)}..." -> "${translatedText.substring(0, 30)}..."`);
         return true;
     } catch (e) {
         console.error(`[Translator] Failed to replace node ${id}:`, e);
@@ -444,7 +445,7 @@ function getPageLanguage() {
 async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto', retries = 3) {
     if (textItems.length === 0) return { applied: 0, failed: [] };
 
-    console.log(`[Translator] translateBatch called with ${textItems.length} items`);
+    // console.log(`[Translator] translateBatch called with ${textItems.length} items`);
 
     // Use passed source language if valid, otherwise detect from page
     const pageLanguage = (sourceLanguage && sourceLanguage !== 'auto')
@@ -461,14 +462,14 @@ async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto'
                 sourceLanguage: pageLanguage // Pass detected page language for TranslateGemma
             });
 
-            console.log(`[Translator] translateBatch response:`, response);
+            // console.log(`[Translator] translateBatch response:`, response);
 
             if (response.error) {
                 throw new Error(response.error);
             }
 
             const { translations } = response;
-            console.log(`[Translator] Got ${translations?.length} translations back for ${textItems.length} items`);
+            // console.log(`[Translator] Got ${translations?.length} translations back for ${textItems.length} items`);
 
             let applied = 0;
             const failed = [];
@@ -533,7 +534,7 @@ function onScroll() {
     }
     scrollDebounceTimer = setTimeout(() => {
         if (pendingTranslationQueue.length > 0) {
-            console.log('[Translator] Recalculating priorities after scroll');
+            // console.log('[Translator] Recalculating priorities after scroll');
             recalculatePendingPriorities();
         }
     }, 100); // 100ms debounce for snappier updates
@@ -555,7 +556,7 @@ async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAuto
 
     // Log source language if provided
     if (sourceLanguage && sourceLanguage !== 'auto') {
-        console.log(`[Translator] Using explicit source language: ${sourceLanguage}`);
+        // console.log(`[Translator] Using explicit source language: ${sourceLanguage}`);
     }
 
     // Add scroll listener for dynamic priority
@@ -601,8 +602,7 @@ async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAuto
 
             // Cap percentage at 100%
             const percent = Math.min(100, Math.round((totalProcessed / totalItems) * 100));
-            const parallelInfo = maxConcurrentRequests > 1 ? ` (${inFlightBatches.length} parallel)` : '';
-            showStatus(`Translating... ${percent}%${parallelInfo}`);
+            showStatus(`Translating... ${percent}%`);
 
             // Wait for any one batch to complete
             if (inFlightBatches.length > 0) {
@@ -721,14 +721,14 @@ function recalculatePendingPriorities() {
     pendingTranslationQueue.sort((a, b) => b.priority - a.priority);
 
     // Debug log top 3 items
-    if (pendingTranslationQueue.length > 0) {
-        const top = pendingTranslationQueue.slice(0, 3);
-        console.log('[Translator] Top priority items after scroll:', top.map(i => ({
-            id: i.id,
-            text: i.text.substring(0, 20),
-            prio: i.priority
-        })));
-    }
+    // if (pendingTranslationQueue.length > 0) {
+    //     const top = pendingTranslationQueue.slice(0, 3);
+    //     console.log('[Translator] Top priority items after scroll:', top.map(i => ({
+    //         id: i.id,
+    //         text: i.text.substring(0, 20),
+    //         prio: i.priority
+    //     })));
+    // }
 }
 
 /**
@@ -805,8 +805,8 @@ async function translatePendingNodes() {
     showStatus(`Translating ${textItems.length} new elements...`);
 
     try {
-        const applied = await translateBatch(textItems, currentTargetLanguage);
-        showStatus(`Translated ${applied} new elements`);
+        const result = await translateBatch(textItems, currentTargetLanguage);
+        showStatus(`Translated ${result.applied} new elements`);
         setTimeout(hideStatus, 2000);
     } catch (e) {
         console.error('Auto-translate error:', e);
@@ -819,7 +819,7 @@ async function translatePendingNodes() {
 
 // Listen for messages from background/popup
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log(`[Translator] Received message: ${message.type}`, message);
+    // console.log(`[Translator] Received message: ${message.type}`, message);
 
     switch (message.type) {
         case 'START_TRANSLATION':
