@@ -311,7 +311,20 @@ function replaceTextNode(id, translatedText) {
     try {
         const leadingSpace = originalText.match(/^\s*/)[0];
         const trailingSpace = originalText.match(/\s*$/)[0];
-        node.textContent = leadingSpace + translatedText + trailingSpace;
+
+        // For spaceless languages (Japanese, Chinese, etc.), add spacing when translating
+        // to spaced languages if there was no original spacing
+        let finalText = translatedText;
+        if (!trailingSpace && translatedText) {
+            // Check if original text looks like a spaceless language (contains CJK characters)
+            const hasCJK = /[\u3000-\u9fff\uff00-\uffef]/.test(originalText);
+            if (hasCJK) {
+                // Always add trailing space for CJK source
+                finalText = translatedText + ' ';
+            }
+        }
+
+        node.textContent = leadingSpace + finalText + (trailingSpace && !finalText.endsWith(' ') ? trailingSpace : '');
 
         // Add blue glow effect to parent element (if enabled)
         const parent = node.parentElement;

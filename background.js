@@ -218,9 +218,10 @@ function cleanTranslationText(text) {
     let cleaned = text.replace(/^\[?\d+\]?:\s*/g, '');
     // Remove HTML tags that might leak through (like </div>, <span>, etc.)
     cleaned = cleaned.replace(/<\/?[a-z][a-z0-9]*[^>]*>/gi, '');
-    // Remove multiple spaces
-    cleaned = cleaned.replace(/\s+/g, ' ');
-    return cleaned.trim();
+    // Normalize multiple spaces to single space (but preserve leading/trailing)
+    cleaned = cleaned.replace(/  +/g, ' ');
+    // Don't trim - let content.js handle whitespace preservation from original
+    return cleaned;
 }
 
 function parseTranslationResponse(response, originalItems) {
