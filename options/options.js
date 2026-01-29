@@ -127,12 +127,18 @@ function syncEditor(textareaId, backdropId) {
         if (text[text.length - 1] === '\n') {
             text += ' ';
         }
-        // Note: highlightVariables escapes HTML before adding spans, so this is safe
-        // but Firefox AMO still warns. Using a workaround with template element.
-        const template = document.createElement('template');
-        template.innerHTML = highlightVariables(text);
-        backdrop.innerHTML = '';
-        backdrop.appendChild(template.content.cloneNode(true));
+        // Use DOMParser instead of innerHTML to avoid Firefox AMO warnings
+        const parser = new DOMParser();
+        const doc = parser.parseFromString('<div>' + highlightVariables(text) + '</div>', 'text/html');
+        // Clear backdrop using DOM methods
+        while (backdrop.firstChild) {
+            backdrop.removeChild(backdrop.firstChild);
+        }
+        // Append parsed content
+        const content = doc.body.firstChild;
+        while (content.firstChild) {
+            backdrop.appendChild(content.firstChild);
+        }
     };
 
     textarea.addEventListener('input', handleInput);
