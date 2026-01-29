@@ -22,6 +22,7 @@ let translationInProgress = false;
 let translationCancelled = false;  // Flag to cancel ongoing translation
 let nextId = 0;
 let currentTargetLanguage = 'en';
+let maxConcurrentRequests = 4; // Default parallel requests (LMStudio 0.4.0+ supports up to 4)
 let autoTranslateEnabled = false;
 let showGlow = false; // Setting for glow effect (disabled by default)
 let mutationObserver = null;
@@ -580,28 +581,45 @@ async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAuto
         const totalItems = textItems.length;
         const batchSize = 8; // Process in batches
         const failedItems = []; // Track items that failed for potential retry
+        let inFlightBatches = []; // Track in-flight batch promises
 
-        while (pendingTranslationQueue.length > 0 && !translationCancelled) {
-            // Take next batch from queue (highest priority items)
-            const batch = pendingTranslationQueue.splice(0, batchSize);
-            totalProcessed += batch.length;
+        // Main translation loop with parallel processing
+        while ((pendingTranslationQueue.length > 0 || inFlightBatches.length > 0) && !translationCancelled) {
+            // Fill up to maxConcurrentRequests parallel batches
+            while (inFlightBatches.length < maxConcurrentRequests && pendingTranslationQueue.length > 0) {
+                const batch = pendingTranslationQueue.splice(0, batchSize);
+                totalProcessed += batch.length;
+
+                // Create a trackable batch object with unique ID
+                const batchId = Date.now() + Math.random();
+                const batchPromise = translateBatch(batch, targetLanguage, sourceLanguage)
+                    .then(result => ({ batchId, result, batch, success: true }))
+                    .catch(error => ({ batchId, error, batch, success: false }));
+
+                inFlightBatches.push({ batchId, promise: batchPromise });
+            }
 
             // Cap percentage at 100%
             const percent = Math.min(100, Math.round((totalProcessed / totalItems) * 100));
-            showStatus(`Translating... ${percent}%`);
+            const parallelInfo = maxConcurrentRequests > 1 ? ` (${inFlightBatches.length} parallel)` : '';
+            showStatus(`Translating... ${percent}%${parallelInfo}`);
 
-            try {
-                const result = await translateBatch(batch, targetLanguage, sourceLanguage);
-                totalApplied += result.applied;
+            // Wait for any one batch to complete
+            if (inFlightBatches.length > 0) {
+                const completed = await Promise.race(inFlightBatches.map(b => b.promise));
 
-                // Track failed items (don't add to totalProcessed again)
-                if (result.failed && result.failed.length > 0) {
-                    failedItems.push(...result.failed);
+                // Remove the completed batch from inFlightBatches by its ID
+                inFlightBatches = inFlightBatches.filter(b => b.batchId !== completed.batchId);
+
+                if (completed.success) {
+                    totalApplied += completed.result.applied;
+                    if (completed.result.failed && completed.result.failed.length > 0) {
+                        failedItems.push(...completed.result.failed);
+                    }
+                } else {
+                    console.error('Batch error:', completed.error);
+                    failedItems.push(...completed.batch);
                 }
-            } catch (e) {
-                console.error('Batch error:', e);
-                // Add batch items to failed list
-                failedItems.push(...batch);
             }
 
             // Check cancellation between batches
@@ -807,6 +825,10 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'START_TRANSLATION':
             if (message.showGlow !== undefined) {
                 showGlow = message.showGlow;
+            }
+            // Apply concurrency setting
+            if (message.maxConcurrentRequests !== undefined) {
+                maxConcurrentRequests = Math.max(1, Math.min(4, message.maxConcurrentRequests));
             }
             // Pass sourceLanguage to translatePage
             translatePage(message.targetLanguage, message.sourceLanguage, true);

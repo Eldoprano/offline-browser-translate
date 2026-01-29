@@ -25,6 +25,7 @@ const DEFAULT_SETTINGS = {
     sourceLanguage: 'auto', // 'auto' = detect from page, or specific code
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
+    maxConcurrentRequests: 4, // 1-4 parallel requests (LMStudio 0.4.0+ supports up to 4)
     useAdvanced: false,
     customSystemPrompt: '',
     customUserPromptTemplate: '',
@@ -610,7 +611,8 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
                     type: 'START_TRANSLATION',
                     targetLanguage: settings.targetLanguage,
                     sourceLanguage: sourceLang || 'auto', // Use detected or fall back to auto
-                    showGlow: settings.showGlow
+                    showGlow: settings.showGlow,
+                    maxConcurrentRequests: settings.maxConcurrentRequests || 4
                 });
             };
 

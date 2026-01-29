@@ -5,7 +5,6 @@
 // Use browser API with chrome fallback for Firefox compatibility
 const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 
-// Default settings
 const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
@@ -15,6 +14,7 @@ const DEFAULT_SETTINGS = {
     sourceLanguage: 'auto',
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
+    maxConcurrentRequests: 4, // 1-4 parallel requests for LMStudio 0.4.0+
     useAdvanced: false,
     customSystemPrompt: '',
     customUserPromptTemplate: '',
@@ -81,6 +81,8 @@ const elements = {
     userPrompt: document.getElementById('userPrompt'),
     maxTokens: document.getElementById('maxTokens'),
     maxItems: document.getElementById('maxItems'),
+    maxConcurrent: document.getElementById('maxConcurrent'),
+    maxConcurrentValue: document.getElementById('maxConcurrentValue'),
     temperature: document.getElementById('temperature'),
     temperatureValue: document.getElementById('temperatureValue'),
     useStructuredOutput: document.getElementById('useStructuredOutput'),
@@ -238,6 +240,13 @@ function applySettingsToUI() {
     elements.maxItems.value = currentSettings.maxItemsPerBatch || 8;
     elements.temperature.value = currentSettings.temperature;
     elements.temperatureValue.textContent = currentSettings.temperature;
+    // Parallel requests slider
+    if (elements.maxConcurrent) {
+        elements.maxConcurrent.value = currentSettings.maxConcurrentRequests || 4;
+        if (elements.maxConcurrentValue) {
+            elements.maxConcurrentValue.textContent = currentSettings.maxConcurrentRequests || 4;
+        }
+    }
     elements.useStructuredOutput.checked = currentSettings.useStructuredOutput;
     elements.showGlow.checked = currentSettings.showGlow !== false;
     elements.customSystem.value = currentSettings.customSystemPrompt || '';
@@ -337,6 +346,7 @@ async function saveCurrentSettings() {
         requestFormat: elements.requestFormat.value,
         maxTokensPerBatch: parseInt(elements.maxTokens.value) || 2000,
         maxItemsPerBatch: parseInt(elements.maxItems.value) || 8,
+        maxConcurrentRequests: parseInt(elements.maxConcurrent?.value) || 4,
         temperature: parseFloat(elements.temperature.value) || 0.3,
         useStructuredOutput: elements.useStructuredOutput.checked,
         showGlow: elements.showGlow.checked,
@@ -373,6 +383,15 @@ function setupEventListeners() {
     elements.temperature.addEventListener('input', (e) => {
         elements.temperatureValue.textContent = e.target.value;
     });
+
+    // Parallel requests slider
+    if (elements.maxConcurrent) {
+        elements.maxConcurrent.addEventListener('input', (e) => {
+            if (elements.maxConcurrentValue) {
+                elements.maxConcurrentValue.textContent = e.target.value;
+            }
+        });
+    }
 
     // Request format change
     elements.requestFormat.addEventListener('change', (e) => {

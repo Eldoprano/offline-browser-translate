@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
     targetLanguage: 'en',
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
+    maxConcurrentRequests: 4, // 1-4 parallel requests (LMStudio 0.4.0+ supports parallelism)
     useAdvanced: false,
     customSystemPrompt: '',
     customUserPromptTemplate: '',
@@ -433,7 +434,8 @@ async function startTranslation() {
                     type: 'START_TRANSLATION',
                     targetLanguage: currentSettings.targetLanguage,
                     sourceLanguage: finalSourceLang, // Add source language for logging and override
-                    showGlow: currentSettings.showGlow
+                    showGlow: currentSettings.showGlow,
+                    maxConcurrentRequests: currentSettings.maxConcurrentRequests || 4
                 });
                 if (response && response.started) {
                     return; // Success! UI stays in translating state
