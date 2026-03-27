@@ -626,7 +626,7 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
                 // If message failed, content script might not be loaded. Inject it.
                 await browserAPI.scripting.executeScript({
                     target: { tabId: tab.id },
-                    files: ['content.js']
+                    files: ['translator/wanakana.min.js', 'content.js']
                 });
 
                 // Wait briefly for script to initialize
