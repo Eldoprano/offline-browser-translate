@@ -421,8 +421,18 @@ function setupEventListeners() {
 
     // Save settings
     elements.saveSettings.addEventListener('click', async () => {
+        // Request host permission for any non-localhost server URL (opt-in).
+        // Must run inside this click gesture, before any other awaits.
+        const granted = await ensureHostPermissions([
+            elements.ollamaUrl.value,
+            elements.lmstudioUrl.value
+        ]);
         await saveCurrentSettings();
-        showToast('Settings saved!');
+        if (!granted) {
+            showToast('Saved, but permission for the custom server was denied — remote models won\'t load until you allow it.', 'error', 5000);
+        } else {
+            showToast('Settings saved!');
+        }
     });
 
     // Reset settings

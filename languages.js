@@ -241,6 +241,54 @@ function resolveRequestFormat(settings, modelId) {
     return fmt;
 }
 
+// ============================================================================
+// Host permissions for custom (non-localhost) server URLs
+// ============================================================================
+// The extension ships with only `http://localhost/*` as a static host
+// permission, to stay privacy-minimal. When the user points Ollama/LMStudio at
+// a remote machine (e.g. another box on the LAN), the extension needs an
+// explicit, opt-in host permission for that origin — otherwise the background
+// fetch is blocked by the browser and "no models found" with no visible error.
+
+// Hostnames already covered by the static `http://localhost/*` permission.
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+
+/**
+ * Build a match-pattern (origin) for a server URL, or null when no extra
+ * permission is needed. Note: match patterns ignore the port, so a single
+ * `http://192.168.1.50/*` covers any port on that host.
+ * @param {string} rawUrl
+ * @returns {string|null}
+ */
+function hostPermissionPattern(rawUrl) {
+    if (!rawUrl) return null;
+    let u;
+    try { u = new URL(rawUrl); } catch { return null; }
+    if (LOCAL_HOSTNAMES.has(u.hostname)) return null; // covered by static permission
+    return `${u.protocol}//${u.hostname}/*`;
+}
+
+/**
+ * Request host permissions for any non-localhost server URLs. Must be called
+ * from within a user gesture (e.g. a Save button click). Already-granted
+ * origins resolve immediately without a prompt.
+ * @param {string[]} urls - candidate server URLs (localhost ones are ignored)
+ * @returns {Promise<boolean>} true if no permission was needed or all granted
+ */
+async function ensureHostPermissions(urls) {
+    const api = (typeof browser !== 'undefined') ? browser : chrome;
+    const patterns = [...new Set(
+        (urls || []).map(hostPermissionPattern).filter(Boolean)
+    )];
+    if (!patterns.length) return true;
+    try {
+        return await api.permissions.request({ origins: patterns });
+    } catch (e) {
+        console.error('Host permission request failed:', e);
+        return false;
+    }
+}
+
 // Export for use in other scripts (will be included via script tag)
 // These will be available as global variables
 if (typeof window !== 'undefined') {
@@ -251,6 +299,8 @@ if (typeof window !== 'undefined') {
     window.PLAIN_TEXT_FORMATS = PLAIN_TEXT_FORMATS;
     window.detectRequestFormat = detectRequestFormat;
     window.resolveRequestFormat = resolveRequestFormat;
+    window.hostPermissionPattern = hostPermissionPattern;
+    window.ensureHostPermissions = ensureHostPermissions;
 } else if (typeof self !== 'undefined') {
     self.LANGUAGES = LANGUAGES;
     self.getLanguageName = getLanguageName;
@@ -259,4 +309,6 @@ if (typeof window !== 'undefined') {
     self.PLAIN_TEXT_FORMATS = PLAIN_TEXT_FORMATS;
     self.detectRequestFormat = detectRequestFormat;
     self.resolveRequestFormat = resolveRequestFormat;
+    self.hostPermissionPattern = hostPermissionPattern;
+    self.ensureHostPermissions = ensureHostPermissions;
 }
