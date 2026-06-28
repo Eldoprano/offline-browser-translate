@@ -527,7 +527,10 @@ function hideStatus() {
  * Detect page source language from HTML lang attribute
  * Returns base language code (e.g., "en" from "en-US")
  */
-function getPageLanguage() {
+// Returns the page's explicitly declared language code, or null when the page
+// declares none. Kept separate from getPageLanguage() so callers that need to
+// reason about "unknown" (e.g. the floating button) aren't fooled by a default.
+function getDeclaredPageLanguage() {
     const htmlLang = document.documentElement.lang || document.querySelector('html')?.getAttribute('lang');
     if (htmlLang) {
         // Extract base language code (e.g., "en" from "en-US")
@@ -538,7 +541,11 @@ function getPageLanguage() {
     if (metaLang) {
         return metaLang.split('-')[0].toLowerCase();
     }
-    return 'en'; // Default fallback
+    return null; // No declared language
+}
+
+function getPageLanguage() {
+    return getDeclaredPageLanguage() || 'en'; // Default fallback for translation source
 }
 
 /**
@@ -1144,7 +1151,10 @@ function tryShowFloatingBtn() {
     if (!floatingButtonEnabled) return;
     const selection = window.getSelection();
     const selectedText = selection?.toString().trim() || '';
-    const sameLanguage = getPageLanguage() === currentTargetLanguage;
+    // Only suppress when the page *explicitly* declares the target language; an
+    // undeclared page (null) is treated as unknown so the button still appears.
+    const declaredLang = getDeclaredPageLanguage();
+    const sameLanguage = declaredLang !== null && declaredLang === currentTargetLanguage;
     if (selection && !selection.isCollapsed && selectedText.length >= MIN_TEXT_LENGTH
             && !sameLanguage && !translationInProgress && !suppressFloatingBtn) {
         showFloatingBtn(selection);

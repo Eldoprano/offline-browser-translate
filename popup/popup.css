@@ -50,8 +50,10 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
-  width: 320px;
-  min-height: 400px;
+  width: 320px;        /* overridden by JS when user resizes */
+  min-width: 260px;
+  min-height: 300px;
+  overflow-y: auto;    /* allows height resize without cutting content */
 }
 
 .container {
@@ -590,4 +592,269 @@ textarea.highlight-vars {
 .small-select:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* ========================================================================
+   Language picker (custom dropdown with pin + search)
+   ======================================================================== */
+.lang-picker {
+  position: relative;
+}
+
+/* Trigger button — styled to match the native selects */
+.lang-picker-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.lang-picker-trigger:hover {
+  border-color: var(--accent);
+}
+
+.lang-picker.open .lang-picker-trigger {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.lang-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lang-picker-caret {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.lang-picker.open .lang-picker-caret {
+  transform: rotate(180deg);
+}
+
+/* Dropdown menu */
+.lang-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg3);
+  border-radius: var(--border-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.lang-picker-search-wrap {
+  padding: 8px;
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.lang-picker-search {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.lang-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* A language row */
+.lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.lang-option:hover,
+.lang-option.active {
+  background: var(--bg-tertiary);
+}
+
+.lang-option.selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.lang-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pin button on the right of each row */
+.lang-pin-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.lang-pin-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Reveal the pin on row hover/focus, or keep it visible when pinned */
+.lang-option:hover .lang-pin-btn,
+.lang-option.active .lang-pin-btn,
+.lang-pin-btn:focus-visible {
+  opacity: 1;
+}
+
+.lang-pin-btn:hover {
+  background: var(--bg2);
+  color: var(--accent);
+}
+
+/* Pinned rows: filled pin, always shown, tinted accent */
+.lang-option.pinned .lang-pin-btn {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.lang-option.pinned .lang-pin-btn svg {
+  fill: var(--accent);
+}
+
+/* Group label + separator between pinned and the rest */
+.lang-group-label {
+  padding: 6px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.lang-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--bg-tertiary);
+  list-style: none;
+}
+
+.lang-empty {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  cursor: default;
+}
+
+/* ========================================================================
+   Model picker — extends the lang-picker styles with model-specific tweaks
+   ======================================================================== */
+
+/* Give room for the refresh icon-btn that sits absolutely in the form-group */
+.main-controls .form-group:first-child .model-picker-trigger {
+  padding-right: 44px;
+}
+
+/* Provider badge shown on each model row */
+.model-provider-badge {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  opacity: 0.9;
+  margin-right: 2px;
+}
+
+.model-provider-badge--ollama {
+  background: rgba(131, 192, 146, 0.12);
+  color: var(--aqua);
+  border: 1px solid rgba(131, 192, 146, 0.3);
+}
+
+.model-provider-badge--lmstudio {
+  background: rgba(214, 153, 182, 0.12);
+  color: var(--purple);
+  border: 1px solid rgba(214, 153, 182, 0.3);
+}
+
+/* Disabled model trigger (loading / error states) */
+.model-picker-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ========================================================================
+   Resize handle — bottom-right corner drag grip
+   ======================================================================== */
+.resize-handle {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 4px;
+  cursor: sw-resize;
+  color: var(--grey0);
+  opacity: 0.35;
+  transition: opacity 0.15s ease, color 0.15s ease;
+  z-index: 9999;
+  user-select: none;
+  touch-action: none; /* required for pointer capture */
+}
+
+.resize-handle svg {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.resize-handle:hover {
+  opacity: 0.85;
+  color: var(--accent);
+}
+
+.resize-handle.dragging {
+  opacity: 1;
+  color: var(--accent);
 }

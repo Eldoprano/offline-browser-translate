@@ -25,18 +25,36 @@
 
     <section class="main-controls">
       <div class="form-group">
-        <label for="modelSelect">Model</label>
-        <select id="modelSelect" disabled>
-          <option value="">Loading models...</option>
-        </select>
+        <label for="modelTrigger">Model</label>
+        <div class="lang-picker" id="modelPickerEl">
+          <button type="button" id="modelTrigger" class="lang-picker-trigger model-picker-trigger" aria-haspopup="listbox" aria-expanded="false" disabled>
+            <span id="modelTriggerLabel" class="lang-picker-label">Loading models...</span>
+            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div id="modelMenu" class="lang-picker-menu" hidden>
+            <div class="lang-picker-search-wrap">
+              <input type="text" id="modelSearch" class="lang-picker-search" placeholder="Search models…" autocomplete="off" spellcheck="false" />
+            </div>
+            <ul id="modelList" class="lang-picker-list" role="listbox" tabindex="-1"></ul>
+          </div>
+        </div>
         <button id="refreshModels" class="icon-btn" title="Refresh models">↻</button>
       </div>
 
       <div class="form-group">
-        <label for="languageSelect">Translate to</label>
-        <select id="languageSelect">
-          <!-- Populated dynamically from languages.js -->
-        </select>
+        <label for="langTrigger">Translate to</label>
+        <div class="lang-picker" id="languagePicker">
+          <button type="button" id="langTrigger" class="lang-picker-trigger" aria-haspopup="listbox" aria-expanded="false">
+            <span id="langTriggerLabel" class="lang-picker-label">English</span>
+            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+          <div id="langMenu" class="lang-picker-menu" hidden>
+            <div class="lang-picker-search-wrap">
+              <input type="text" id="langSearch" class="lang-picker-search" placeholder="Search languages…" autocomplete="off" spellcheck="false" />
+            </div>
+            <ul id="langList" class="lang-picker-list" role="listbox" tabindex="-1"></ul>
+          </div>
+        </div>
       </div>
 
       <!-- Source language (only for TranslateGemma) -->
@@ -178,6 +196,18 @@
       </button>
       <p>All translations stay on your device</p>
     </footer>
+  </div>
+
+  <!-- Resize handle — drag to make the popup wider/taller -->
+  <div class="resize-handle" aria-hidden="true" title="Drag to resize">
+    <svg viewBox="0 0 12 12" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="2"  cy="2"  r="1.3"/>
+      <circle cx="2"  cy="6"  r="1.3"/>
+      <circle cx="2"  cy="10" r="1.3"/>
+      <circle cx="6"  cy="6"  r="1.3"/>
+      <circle cx="6"  cy="10" r="1.3"/>
+      <circle cx="10" cy="10" r="1.3"/>
+    </svg>
   </div>
 
   <script src="../languages.js"></script>
