@@ -134,19 +134,24 @@ const GLOSSARY_PREVIEW_MAX = 200; // rows sent to the options page for the previ
 let glossaryEntries = null;     // Array<[source, target]>, lazily loaded
 let glossaryAutomaton = null;   // built Aho-Corasick root, or null
 let glossaryExactIndex = null;  // Map<source, target> for whole-segment lookups
+let glossaryTargetLang = '';    // '#target: xx' TSV directive; '' = apply to any target
+let glossarySig = null;         // content hash folded into the cache key (see promptSig)
 
 async function loadGlossary() {
     if (glossaryEntries) return glossaryEntries;
     try {
-        const result = await browserAPI.storage.local.get(GLOSSARY_KEY);
+        const result = await browserAPI.storage.local.get([GLOSSARY_KEY, GLOSSARY_META_KEY]);
         const entries = result[GLOSSARY_KEY];
         glossaryEntries = Array.isArray(entries) ? entries : [];
+        glossaryTargetLang = (result[GLOSSARY_META_KEY] && result[GLOSSARY_META_KEY].target) || '';
     } catch (e) {
         console.error('Failed to load glossary:', e);
         glossaryEntries = [];
+        glossaryTargetLang = '';
     }
     glossaryAutomaton = null;
     glossaryExactIndex = null;
+    glossarySig = null;
     return glossaryEntries;
 }
 
@@ -156,6 +161,31 @@ function invalidateGlossary() {
     glossaryEntries = null;
     glossaryAutomaton = null;
     glossaryExactIndex = null;
+    glossaryTargetLang = '';
+    glossarySig = null;
+}
+
+// A glossary maps source terms to ONE target language. When the TSV declares it
+// (via a `#target: xx` line), only apply the glossary when translating into that
+// language — otherwise a Japanese dictionary would inject Japanese into a
+// Spanish translation. Undeclared glossaries apply to every target (legacy).
+function glossaryAppliesTo(targetLanguage) {
+    if (!glossaryTargetLang) return true;
+    const base = (targetLanguage || '').split('-')[0].toLowerCase();
+    return glossaryTargetLang === base;
+}
+
+// Compact token identifying the active glossary for the translation cache key:
+// '' when the glossary is off/empty/inapplicable (so keys match the no-glossary
+// ones), else a hash of its entries. This keeps cached output honest when the
+// user toggles "Use glossary" or switches target language — without it, text
+// translated with glossary hints would be served from cache after disabling it.
+async function getGlossarySignature(settings, targetLanguage) {
+    if (settings.useGlossary === false) return '';
+    const entries = await loadGlossary();
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return '';
+    if (glossarySig === null) glossarySig = hashString(JSON.stringify(entries));
+    return glossarySig;
 }
 
 // Map of source => target for whole-segment lookups. A segment that consists
@@ -164,10 +194,10 @@ function invalidateGlossary() {
 // hints only nudge the model, and short context-free labels are exactly where
 // small models produce broken output. An empty target means "keep as-is", same
 // as the prompt-hint path. Returns null when the glossary is off or empty.
-async function getGlossaryExactIndex(settings) {
+async function getGlossaryExactIndex(settings, targetLanguage) {
     if (settings.useGlossary === false) return null;
     const entries = await loadGlossary();
-    if (!entries.length) return null;
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return null;
     if (!glossaryExactIndex) {
         glossaryExactIndex = new Map();
         for (const entry of entries) {
@@ -247,10 +277,10 @@ function scanGlossary(root, entries, text) {
 
 // Build the glossary instruction block for the terms found in `text`. Returns ''
 // when the glossary is empty or nothing matches, so prompts are unchanged.
-async function buildGlossaryBlock(settings, text) {
+async function buildGlossaryBlock(settings, text, targetLanguage) {
     if (settings.useGlossary === false) return '';
     const entries = await loadGlossary();
-    if (!entries.length) return '';
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return '';
     if (!glossaryAutomaton) glossaryAutomaton = buildGlossaryAutomaton(entries);
     const hits = scanGlossary(glossaryAutomaton, entries, text);
     if (!hits.length) return '';
@@ -851,8 +881,13 @@ async function translate(textItems, targetLanguage, settings) {
 
         // Prepend matching glossary terms so the model keeps proper nouns
         // consistent. Empty when the glossary is off/unmatched (prompt unchanged).
-        const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'));
-        if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
+        // Skipped for plain-text formats (TranslateGemma, Hunyuan-MT): those
+        // models expect a fixed prompt shape and would treat an extra instruction
+        // block as text to translate. Whole-segment mappings still apply to them.
+        if (!isPlainText) {
+            const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'), targetLanguage);
+            if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
+        }
         const raw = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
         
@@ -885,7 +920,8 @@ async function translate(textItems, targetLanguage, settings) {
         && typeof cacheGetMany === 'function' && typeof cacheKey === 'function';
     const promptSig = hashString([
         format, wantJson ? 'json' : 'plain', String(settings.temperature),
-        systemTemplate, userTemplate
+        systemTemplate, userTemplate,
+        await getGlossarySignature(settings, targetLanguage)
     ].join('\u0000'));
     const keyFor = cacheEnabled
         ? (text) => cacheKey(modelId, sourceLangCode, targetLanguage, promptSig, text)
@@ -904,7 +940,7 @@ async function translate(textItems, targetLanguage, settings) {
     // and the model — the user's explicit mapping beats both a cached LLM answer
     // and a fresh one. Not written to the cache (the lookup is cheaper than it).
     let glossaryExactCount = 0;
-    const exactIndex = await getGlossaryExactIndex(settings);
+    const exactIndex = await getGlossaryExactIndex(settings, targetLanguage);
     if (exactIndex) {
         for (const g of groups.values()) {
             const direct = exactIndex.get(g.item.text.trim());
@@ -1140,6 +1176,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const entries = Array.isArray(message.entries) ? message.entries : [];
                     const meta = {
                         name: typeof message.name === 'string' ? message.name : '',
+                        // Target language declared by a '#target: xx' line in the
+                        // TSV; '' means the glossary applies to any target language.
+                        target: typeof message.target === 'string' ? message.target.split('-')[0].toLowerCase() : '',
                         loadedAt: Date.now()
                     };
                     await browserAPI.storage.local.set({ [GLOSSARY_KEY]: entries, [GLOSSARY_META_KEY]: meta });
@@ -1160,6 +1199,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({
                         count: entries.length,
                         name: meta && meta.name || '',
+                        target: meta && meta.target || '',
                         loadedAt: meta && meta.loadedAt || null,
                         // First rows only: enough to eyeball the dictionary without
                         // shipping tens of thousands of pairs to the options page.

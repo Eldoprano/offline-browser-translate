@@ -4,6 +4,9 @@
 # When a whole segment equals a glossary source, the mapping is applied directly
 # and the model is skipped — this keeps short nav/heading labels from being
 # translated literally (e.g. the heading "About" becoming "について").
+# The '#target:' directive declares the language this glossary translates into;
+# the glossary is then only applied when that target language is selected.
+#target: ja
 About	概要
 Contact	お問い合わせ
 Home	ホーム

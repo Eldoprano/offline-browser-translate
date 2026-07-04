@@ -216,7 +216,7 @@
                 <div class="form-group">
                     <label for="glossaryFile">Load glossary file (TSV)</label>
                     <input type="file" id="glossaryFile" accept=".tsv,.txt,text/plain">
-                    <p class="hint">One entry per line: <code>source&lt;TAB&gt;translation</code>. Omit the second column to keep a term as-is (do not translate). Lines starting with <code>#</code> and blank lines are ignored. Loading replaces the current dictionary and clears the translation cache.</p>
+                    <p class="hint">One entry per line: <code>source&lt;TAB&gt;translation</code>. Omit the second column to keep a term as-is (do not translate). Lines starting with <code>#</code> and blank lines are ignored. Add a <code>#target: ja</code> line to declare the language the glossary translates into — it is then only applied when that target language is selected. Loading replaces the current dictionary and clears the translation cache.</p>
                     <p class="hint" id="glossaryStatus">No glossary loaded.</p>
                     <details id="glossaryPreview" class="glossary-preview" hidden>
                         <summary>Show loaded terms</summary>
