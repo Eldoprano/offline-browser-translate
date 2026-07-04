@@ -39,7 +39,8 @@ const DEFAULT_SETTINGS = {
     // (kept until the browser is closed, then wiped), or 'off'. Off by default.
     cacheMode: 'off',
     debug: false,       // Enable verbose logging
-    floatingButton: false // Show floating translate button on text selection (requires <all_urls> permission)
+    floatingButton: false, // Show floating translate button on text selection (requires <all_urls> permission)
+    useGlossary: true   // Inject matching glossary terms into the prompt for consistent proper-noun translation
 };
 
 let debugEnabled = false;
@@ -111,6 +112,154 @@ async function getSettings() {
         return loadSettings();
     }
     return cachedSettings;
+}
+
+// ============================================================================
+// Glossary
+// User-supplied proper-noun dictionary. Only terms that actually appear in the
+// batch being translated are injected into the prompt, so the dictionary itself
+// can be large (tens of thousands of entries) without bloating requests.
+//
+// Stored in storage.local under 'glossary' as an array of [source, target]
+// pairs. An empty/identical target means "keep as-is" (do not translate).
+// Matching is case-sensitive and Latin word-boundary aware (proper nouns); an
+// Aho-Corasick automaton is built lazily so a batch is scanned in one pass.
+// ============================================================================
+
+const GLOSSARY_KEY = 'glossary';
+const GLOSSARY_META_KEY = 'glossaryMeta';  // { name, loadedAt } of the loaded TSV, for the options UI
+const GLOSSARY_MAX_HITS = 40;   // cap terms injected per batch to keep prompts small
+const GLOSSARY_PREVIEW_MAX = 200; // rows sent to the options page for the preview list
+
+let glossaryEntries = null;     // Array<[source, target]>, lazily loaded
+let glossaryAutomaton = null;   // built Aho-Corasick root, or null
+let glossaryExactIndex = null;  // Map<source, target> for whole-segment lookups
+
+async function loadGlossary() {
+    if (glossaryEntries) return glossaryEntries;
+    try {
+        const result = await browserAPI.storage.local.get(GLOSSARY_KEY);
+        const entries = result[GLOSSARY_KEY];
+        glossaryEntries = Array.isArray(entries) ? entries : [];
+    } catch (e) {
+        console.error('Failed to load glossary:', e);
+        glossaryEntries = [];
+    }
+    glossaryAutomaton = null;
+    glossaryExactIndex = null;
+    return glossaryEntries;
+}
+
+// Reset in-memory glossary so the next translate reloads it. Called after the
+// user replaces or clears the dictionary.
+function invalidateGlossary() {
+    glossaryEntries = null;
+    glossaryAutomaton = null;
+    glossaryExactIndex = null;
+}
+
+// Map of source => target for whole-segment lookups. A segment that consists
+// entirely of a glossary term (e.g. the nav heading "About") is translated
+// deterministically from this map instead of being sent to the model — prompt
+// hints only nudge the model, and short context-free labels are exactly where
+// small models produce broken output. An empty target means "keep as-is", same
+// as the prompt-hint path. Returns null when the glossary is off or empty.
+async function getGlossaryExactIndex(settings) {
+    if (settings.useGlossary === false) return null;
+    const entries = await loadGlossary();
+    if (!entries.length) return null;
+    if (!glossaryExactIndex) {
+        glossaryExactIndex = new Map();
+        for (const entry of entries) {
+            const src = entry && entry[0];
+            if (!src) continue;
+            const tgt = entry[1];
+            glossaryExactIndex.set(src, (tgt === undefined || tgt === '') ? src : tgt);
+        }
+    }
+    return glossaryExactIndex;
+}
+
+function isWordChar(c) {
+    return c !== '' && c !== undefined && /[\p{L}\p{N}_]/u.test(c);
+}
+
+// Build an Aho-Corasick automaton over the source strings (case-sensitive,
+// UTF-16 unit granularity — fine for Latin proper nouns).
+function buildGlossaryAutomaton(entries) {
+    const root = { next: new Map(), fail: null, out: [] };
+    for (let i = 0; i < entries.length; i++) {
+        const pat = entries[i] && entries[i][0];
+        if (!pat) continue;
+        let node = root;
+        for (let j = 0; j < pat.length; j++) {
+            const ch = pat[j];
+            let child = node.next.get(ch);
+            if (!child) { child = { next: new Map(), fail: null, out: [] }; node.next.set(ch, child); }
+            node = child;
+        }
+        node.out.push(i);
+    }
+    const queue = [];
+    for (const child of root.next.values()) { child.fail = root; queue.push(child); }
+    while (queue.length) {
+        const node = queue.shift();
+        for (const [ch, child] of node.next) {
+            let f = node.fail;
+            while (f && !f.next.has(ch)) f = f.fail;
+            child.fail = (f && f.next.get(ch)) || root;
+            if (child.fail.out.length) child.out = child.out.concat(child.fail.out);
+            queue.push(child);
+        }
+    }
+    return root;
+}
+
+// Find glossary entries that occur in `text`. Returns an array of entry indices,
+// deduped, in first-seen order, capped at GLOSSARY_MAX_HITS. A Latin match is
+// rejected when it sits inside a larger word (e.g. "Container" in "Containers").
+function scanGlossary(root, entries, text) {
+    const seen = new Set();
+    const order = [];
+    let node = root;
+    for (let i = 0; i < text.length && order.length < GLOSSARY_MAX_HITS; i++) {
+        const ch = text[i];
+        while (node !== root && !node.next.has(ch)) node = node.fail;
+        node = node.next.get(ch) || root;
+        if (!node.out.length) continue;
+        for (const idx of node.out) {
+            if (seen.has(idx)) continue;
+            const pat = entries[idx][0];
+            const end = i + 1;
+            const start = end - pat.length;
+            const before = start > 0 ? text[start - 1] : '';
+            const after = end < text.length ? text[end] : '';
+            const cutStart = isWordChar(before) && isWordChar(pat[0]);
+            const cutEnd = isWordChar(after) && isWordChar(pat[pat.length - 1]);
+            if (cutStart || cutEnd) continue;
+            seen.add(idx);
+            order.push(idx);
+            if (order.length >= GLOSSARY_MAX_HITS) break;
+        }
+    }
+    return order;
+}
+
+// Build the glossary instruction block for the terms found in `text`. Returns ''
+// when the glossary is empty or nothing matches, so prompts are unchanged.
+async function buildGlossaryBlock(settings, text) {
+    if (settings.useGlossary === false) return '';
+    const entries = await loadGlossary();
+    if (!entries.length) return '';
+    if (!glossaryAutomaton) glossaryAutomaton = buildGlossaryAutomaton(entries);
+    const hits = scanGlossary(glossaryAutomaton, entries, text);
+    if (!hits.length) return '';
+    const lines = hits.map(idx => {
+        const [src, tgt] = entries[idx];
+        const target = (tgt === undefined || tgt === '') ? src : tgt;
+        return `- "${src}" => "${target}"`;
+    });
+    return `[Glossary] Use these exact translations for the listed terms. Keep them consistent and do not alter them:\n${lines.join('\n')}`;
 }
 
 // ============================================================================
@@ -675,8 +824,13 @@ async function translate(textItems, targetLanguage, settings) {
         const mappedItems = items.map((item, index) => ({ id: index, text: item.text, originalId: item.id }));
         
         const vars = { ...baseVars, texts: formatTextsForPrompt(mappedItems) };
-        const userPrompt = buildPrompt(userTemplate, vars);
+        let userPrompt = buildPrompt(userTemplate, vars);
         const systemPrompt = buildPrompt(systemTemplate, vars);
+
+        // Prepend matching glossary terms so the model keeps proper nouns
+        // consistent. Empty when the glossary is off/unmatched (prompt unchanged).
+        const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'));
+        if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
         const raw = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
         
@@ -724,15 +878,36 @@ async function translate(textItems, targetLanguage, settings) {
         else groups.set(k, { key: k, item, ids: [item.id] });
     }
 
+    // Whole-segment glossary matches resolve deterministically, before the cache
+    // and the model — the user's explicit mapping beats both a cached LLM answer
+    // and a fresh one. Not written to the cache (the lookup is cheaper than it).
+    let glossaryExactCount = 0;
+    const exactIndex = await getGlossaryExactIndex(settings);
+    if (exactIndex) {
+        for (const g of groups.values()) {
+            const direct = exactIndex.get(g.item.text.trim());
+            if (direct !== undefined) {
+                results.set(g.item.id, direct);
+                glossaryExactCount++;
+            }
+        }
+        if (glossaryExactCount) {
+            debugLog(`[Background] glossary: ${glossaryExactCount} whole-segment match(es) resolved without the model`);
+        }
+    }
+    const unresolvedGroups = glossaryExactCount
+        ? [...groups.values()].filter(g => !results.has(g.item.id))
+        : [...groups.values()];
+
     // Serve cache hits up front; only unresolved groups go to the model.
     let cacheHitCount = 0;      // unique source strings served from cache
     let fromCacheItems = 0;     // text elements served from cache (incl. duplicates)
     let missGroups;
     if (cacheEnabled) {
         try {
-            const found = await cacheGetMany([...groups.keys()]);
+            const found = await cacheGetMany(unresolvedGroups.map(g => g.key));
             missGroups = [];
-            for (const g of groups.values()) {
+            for (const g of unresolvedGroups) {
                 const cached = found.get(g.key);
                 if (cached !== undefined) {
                     results.set(g.item.id, cached);
@@ -744,10 +919,10 @@ async function translate(textItems, targetLanguage, settings) {
             }
         } catch (e) {
             debugWarn('[Background] cache read failed, translating all:', e && e.message);
-            missGroups = [...groups.values()];
+            missGroups = unresolvedGroups;
         }
     } else {
-        missGroups = [...groups.values()];
+        missGroups = unresolvedGroups;
     }
     debugLog(`[Background] cache: ${cacheHitCount} hit / ${missGroups.length} miss (${groups.size} unique of ${textItems.length} total)`);
 
@@ -936,6 +1111,46 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     } catch (e) {
                         sendResponse({ persistent: false, error: e && e.message });
                     }
+                    break;
+
+                case 'SAVE_GLOSSARY': {
+                    // entries: Array<[source, target]> already parsed by the options page.
+                    const entries = Array.isArray(message.entries) ? message.entries : [];
+                    const meta = {
+                        name: typeof message.name === 'string' ? message.name : '',
+                        loadedAt: Date.now()
+                    };
+                    await browserAPI.storage.local.set({ [GLOSSARY_KEY]: entries, [GLOSSARY_META_KEY]: meta });
+                    invalidateGlossary();
+                    // Glossary changes the output for the same source text — drop stale cache.
+                    if (typeof cacheClear === 'function') await cacheClear();
+                    sendResponse({ ok: true, count: entries.length });
+                    break;
+                }
+
+                case 'GET_GLOSSARY_INFO': {
+                    const entries = await loadGlossary();
+                    let meta = null;
+                    try {
+                        const result = await browserAPI.storage.local.get(GLOSSARY_META_KEY);
+                        meta = result[GLOSSARY_META_KEY] || null;
+                    } catch (e) { /* meta is cosmetic — count/preview still work */ }
+                    sendResponse({
+                        count: entries.length,
+                        name: meta && meta.name || '',
+                        loadedAt: meta && meta.loadedAt || null,
+                        // First rows only: enough to eyeball the dictionary without
+                        // shipping tens of thousands of pairs to the options page.
+                        preview: entries.slice(0, GLOSSARY_PREVIEW_MAX)
+                    });
+                    break;
+                }
+
+                case 'CLEAR_GLOSSARY':
+                    await browserAPI.storage.local.remove([GLOSSARY_KEY, GLOSSARY_META_KEY]);
+                    invalidateGlossary();
+                    if (typeof cacheClear === 'function') await cacheClear();
+                    sendResponse({ ok: true });
                     break;
 
                 default:

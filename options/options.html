@@ -201,6 +201,30 @@
                 </div>
             </section>
 
+            <!-- Glossary -->
+            <section class="settings-section">
+                <h2>📖 Glossary</h2>
+                <p class="section-description">Force consistent translations for proper nouns. Only terms that appear in the text being translated are sent to the model, so a large dictionary is fine.</p>
+
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="useGlossary" checked>
+                    <label for="useGlossary">Use glossary</label>
+                    <p class="hint">Inject matching terms into the prompt. Uncheck to disable without deleting the loaded dictionary.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="glossaryFile">Load glossary file (TSV)</label>
+                    <input type="file" id="glossaryFile" accept=".tsv,.txt,text/plain">
+                    <p class="hint">One entry per line: <code>source&lt;TAB&gt;translation</code>. Omit the second column to keep a term as-is (do not translate). Lines starting with <code>#</code> and blank lines are ignored. Loading replaces the current dictionary and clears the translation cache.</p>
+                    <p class="hint" id="glossaryStatus">No glossary loaded.</p>
+                    <details id="glossaryPreview" class="glossary-preview" hidden>
+                        <summary>Show loaded terms</summary>
+                        <div id="glossaryTerms" class="glossary-terms"></div>
+                    </details>
+                    <button id="clearGlossary" class="secondary-btn">🗑️ Clear glossary</button>
+                </div>
+            </section>
+
             <!-- Custom Prompts -->
             <section class="settings-section" id="customPromptsSection" hidden>
                 <h2>✏️ Custom Prompts</h2>

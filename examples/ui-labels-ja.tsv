@@ -1,0 +1,22 @@
+# Sample glossary: common English UI labels -> Japanese
+# Format: source<TAB>translation  (omit the second column to keep the term as-is)
+# Lines starting with '#' and blank lines are ignored. Matching is case-sensitive.
+# When a whole segment equals a glossary source, the mapping is applied directly
+# and the model is skipped — this keeps short nav/heading labels from being
+# translated literally (e.g. the heading "About" becoming "について").
+About	概要
+Contact	お問い合わせ
+Home	ホーム
+Settings	設定
+Search	検索
+Documentation	ドキュメント
+Getting Started	はじめに
+Overview	概要
+FAQ	よくある質問
+Pricing	料金
+Blog	ブログ
+Sign in	サインイン
+Sign up	新規登録
+Log in	ログイン
+Download	ダウンロード
+Learn more	詳細はこちら

@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
     maxOutputRetries: 2,
     plainTextFallback: true,
     showGlow: false,  // Disabled by default
+    useGlossary: true,
     cacheMode: 'off'
 };
 
@@ -97,6 +98,12 @@ const elements = {
     clearCache: document.getElementById('clearCache'),
     cacheCount: document.getElementById('cacheCount'),
     debugLogging: document.getElementById('debugLogging'),
+    useGlossary: document.getElementById('useGlossary'),
+    glossaryFile: document.getElementById('glossaryFile'),
+    glossaryStatus: document.getElementById('glossaryStatus'),
+    glossaryPreview: document.getElementById('glossaryPreview'),
+    glossaryTerms: document.getElementById('glossaryTerms'),
+    clearGlossary: document.getElementById('clearGlossary'),
     floatingButton: document.getElementById('floatingButton'),
     customPromptsSection: document.getElementById('customPromptsSection'),
     customSystem: document.getElementById('customSystem'),
@@ -174,6 +181,7 @@ async function init() {
     initPromptEditors(); // Initialize editors
     await loadModels();
     setupEventListeners();
+    refreshGlossaryStatus();
     refreshCacheCount();
     refreshCacheBackend();
 
@@ -314,6 +322,7 @@ function applySettingsToUI() {
     elements.showGlow.checked = currentSettings.showGlow !== false;
     if (elements.cacheMode) elements.cacheMode.value = currentSettings.cacheMode || 'off';
     elements.debugLogging.checked = !!currentSettings.debug;
+    if (elements.useGlossary) elements.useGlossary.checked = currentSettings.useGlossary !== false;
     elements.floatingButton.checked = !!currentSettings.floatingButton;
     elements.customSystem.value = currentSettings.customSystemPrompt || '';
     elements.customUser.value = currentSettings.customUserPromptTemplate || '';
@@ -398,6 +407,7 @@ async function saveCurrentSettings() {
         showGlow: elements.showGlow.checked,
         cacheMode: elements.cacheMode ? elements.cacheMode.value : 'off',
         debug: elements.debugLogging.checked,
+        useGlossary: elements.useGlossary ? elements.useGlossary.checked : true,
         floatingButton: elements.floatingButton.checked,
         // Save custom prompts from the new prompt editor
         customSystemPrompt: elements.systemPrompt?.value || elements.customSystem?.value || '',
@@ -409,6 +419,74 @@ async function saveCurrentSettings() {
         type: 'SAVE_SETTINGS',
         settings: currentSettings
     });
+}
+
+// Parse a TSV glossary into [source, target] pairs.
+// One entry per line: `source<TAB>translation`. A missing/empty second column
+// means "keep as-is". Lines starting with '#' and blank lines are skipped.
+function parseGlossaryTSV(text) {
+    const entries = [];
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+        if (!line || line[0] === '#') continue;
+        const tab = line.indexOf('\t');
+        const source = (tab === -1 ? line : line.slice(0, tab)).trim();
+        if (!source) continue;
+        const target = tab === -1 ? '' : line.slice(tab + 1).trim();
+        entries.push([source, target]);
+    }
+    return entries;
+}
+
+// Refresh the glossary status line (count, file name, load time) and the
+// expandable preview of loaded terms.
+async function refreshGlossaryStatus() {
+    if (!elements.glossaryStatus) return;
+    let res = null;
+    try {
+        res = await browserAPI.runtime.sendMessage({ type: 'GET_GLOSSARY_INFO' });
+    } catch (e) { /* fall through to the empty state */ }
+    const count = res && res.count ? res.count : 0;
+
+    if (!count) {
+        elements.glossaryStatus.textContent = 'No glossary loaded.';
+        elements.glossaryStatus.classList.remove('glossary-status-loaded');
+        if (elements.glossaryPreview) elements.glossaryPreview.hidden = true;
+        return;
+    }
+
+    let status = `✅ ${count.toLocaleString()} term${count === 1 ? '' : 's'} loaded`;
+    if (res.name) status += ` from ${res.name}`;
+    if (res.loadedAt) status += ` (${new Date(res.loadedAt).toLocaleString()})`;
+    elements.glossaryStatus.textContent = status + '.';
+    elements.glossaryStatus.classList.add('glossary-status-loaded');
+
+    // Preview list. Built with textContent so TSV content is never parsed as HTML.
+    if (!elements.glossaryPreview || !elements.glossaryTerms) return;
+    const preview = Array.isArray(res.preview) ? res.preview : [];
+    elements.glossaryTerms.replaceChildren();
+    for (const entry of preview) {
+        const src = entry && entry[0];
+        if (!src) continue;
+        const tgt = entry[1];
+        const row = document.createElement('div');
+        row.className = 'glossary-term-row';
+        const from = document.createElement('span');
+        from.className = 'glossary-term-source';
+        from.textContent = src;
+        const to = document.createElement('span');
+        to.className = 'glossary-term-target';
+        to.textContent = (tgt === undefined || tgt === '') ? '(kept as-is)' : tgt;
+        row.append(from, ' → ', to);
+        elements.glossaryTerms.appendChild(row);
+    }
+    if (count > preview.length) {
+        const more = document.createElement('div');
+        more.className = 'glossary-term-row glossary-term-more';
+        more.textContent = `… and ${(count - preview.length).toLocaleString()} more`;
+        elements.glossaryTerms.appendChild(more);
+    }
+    elements.glossaryPreview.hidden = false;
 }
 
 // Show toast notification
@@ -502,6 +580,46 @@ function setupEventListeners() {
                 showToast('Translation cache cleared');
             } catch (e) {
                 showToast('Failed to clear cache', 'error');
+            }
+        });
+    }
+
+    // Glossary: load from a TSV file
+    if (elements.glossaryFile) {
+        elements.glossaryFile.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            try {
+                const text = await file.text();
+                const entries = parseGlossaryTSV(text);
+                if (!entries.length) {
+                    showToast('No valid entries found in file', 'error');
+                    return;
+                }
+                const res = await browserAPI.runtime.sendMessage({ type: 'SAVE_GLOSSARY', entries, name: file.name });
+                if (res && res.ok) {
+                    await refreshGlossaryStatus();
+                    showToast(`Glossary loaded: ${res.count} terms`);
+                } else {
+                    showToast('Failed to save glossary', 'error');
+                }
+            } catch (err) {
+                showToast('Failed to read file', 'error');
+            } finally {
+                e.target.value = ''; // allow re-loading the same file
+            }
+        });
+    }
+
+    // Glossary: clear
+    if (elements.clearGlossary) {
+        elements.clearGlossary.addEventListener('click', async () => {
+            const res = await browserAPI.runtime.sendMessage({ type: 'CLEAR_GLOSSARY' });
+            if (res && res.ok) {
+                await refreshGlossaryStatus();
+                showToast('Glossary cleared');
+            } else {
+                showToast('Failed to clear glossary', 'error');
             }
         });
     }
