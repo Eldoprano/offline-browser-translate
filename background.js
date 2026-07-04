@@ -266,7 +266,20 @@ async function buildGlossaryBlock(settings, text) {
 // Provider Detection & Model Listing
 // ============================================================================
 
+// Normalize a user-entered server URL into a bare base (scheme://host:port):
+// trims whitespace and drops trailing slashes and a trailing /v1. Users of
+// OpenAI-compatible servers (llama.cpp, vLLM) habitually paste the base URL as
+// ".../v1" because that's what OpenAI clients expect, but we append the full
+// /v1/... path ourselves. LM Studio's router tolerates the resulting
+// /v1/v1/... and //v1/... paths; llama.cpp and vLLM route strictly and 404,
+// which made those servers look unsupported (issue #4).
+function normalizeServerUrl(rawUrl) {
+    return (rawUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '').replace(/\/+$/, '');
+}
+
 async function detectProviders(ollamaUrl, lmstudioUrl) {
+    ollamaUrl = normalizeServerUrl(ollamaUrl);
+    lmstudioUrl = normalizeServerUrl(lmstudioUrl);
     const results = { ollama: false, ollama_blocked: false, lmstudio: false, lmstudio_blocked: false };
 
     try {
@@ -327,6 +340,7 @@ async function detectProviders(ollamaUrl, lmstudioUrl) {
 }
 
 async function listOllamaModels(url) {
+    url = normalizeServerUrl(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
@@ -343,6 +357,7 @@ async function listOllamaModels(url) {
 }
 
 async function listLMStudioModels(url) {
+    url = normalizeServerUrl(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
@@ -635,7 +650,7 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
     const timeoutId = setTimeout(() => controller.abort(), 300000);
     let response;
     try {
-        response = await fetch(`${settings.ollamaUrl}/api/generate`, {
+        response = await fetch(`${normalizeServerUrl(settings.ollamaUrl)}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -714,7 +729,7 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
     const timeoutId = setTimeout(() => controller.abort(), 300000);
     let response;
     try {
-        response = await fetch(`${settings.lmstudioUrl}/v1/chat/completions`, {
+        response = await fetch(`${normalizeServerUrl(settings.lmstudioUrl)}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -732,6 +747,13 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
 
     if (!response.ok) {
         const error = await response.text();
+        // Older OpenAI-compatible servers (llama.cpp before mid-2024, older vLLM)
+        // reject response_format json_schema with a 400. Retry once without it —
+        // the prompt already asks for JSON and the parser tolerates loose output.
+        if (jsonOutput && response.status === 400 && /response_format|json_schema|guided/i.test(error)) {
+            debugWarn('[Background] Server rejected structured output; retrying without response_format');
+            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false);
+        }
         throw new Error(`LMStudio error: ${error}`);
     }
 

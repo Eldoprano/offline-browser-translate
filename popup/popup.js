@@ -701,6 +701,7 @@ function bannerHTML(type) {
             <li>Load a translation model (e.g. <code style="background: var(--bg1, #2b2b2b); padding: 1px 4px; border-radius: 3px;">ollama pull translategemma</code>)</li>
             <li>Click the refresh button above</li>
         </ol>
+        <div style="margin-top: 4px; font-size: 11px; opacity: 0.8;">llama.cpp, vLLM and other OpenAI-compatible servers also work — put their base URL in the LMStudio URL field.</div>
     `;
 }
 

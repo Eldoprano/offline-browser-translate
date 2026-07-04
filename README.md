@@ -20,6 +20,7 @@ You need one of these running locally:
 
 - **[Ollama](https://ollama.ai/)** (default: `http://localhost:11434`)
 - **[LMStudio](https://lmstudio.ai/)** (default: `http://localhost:1234`)
+- **Any OpenAI-compatible server** — [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server`, [vLLM](https://github.com/vllm-project/vllm), etc. Put the server's base URL (e.g. `http://localhost:8080`) in the **LMStudio / OpenAI-compatible URL** field; a trailing `/v1` is tolerated and stripped automatically
 
 With a translation-capable model loaded (e.g. `TranslateGemma`, `tencent.hunyuan-mt`, `qwen3`, etc.)
 
