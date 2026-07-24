@@ -117,18 +117,16 @@ async function getSettings() {
 // Provider Detection & Model Listing
 // ============================================================================
 
-async function detectProviders(ollamaUrl, lmstudioUrl) {
-    const results = { ollama: false, ollama_blocked: false, lmstudio: false, lmstudio_blocked: false };
-
+async function probeProvider(url) {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-        const response = await fetch(`${ollamaUrl}/api/tags`, {
+        const response = await fetch(url, {
             method: 'GET',
             signal: controller.signal
         });
         clearTimeout(timeout);
-        results.ollama = response.ok;
+        return { ok: response.ok, blocked: false };
     } catch (e) {
         // Normal fetch failed — could be server not running, or CORS blocking the response.
         // Try a no-cors fetch: it gives an opaque response (can't read status/body) but
@@ -136,45 +134,34 @@ async function detectProviders(ollamaUrl, lmstudioUrl) {
         try {
             const controller2 = new AbortController();
             const timeout2 = setTimeout(() => controller2.abort(), 2000);
-            await fetch(`${ollamaUrl}/api/tags`, {
+            await fetch(url, {
                 method: 'GET',
                 mode: 'no-cors',
                 signal: controller2.signal
             });
             clearTimeout(timeout2);
-            results.ollama_blocked = true;
+            return { ok: false, blocked: true };
         } catch (_) {
-            results.ollama = false;
+            return { ok: false, blocked: false };
         }
     }
+}
 
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 2000);
-        const response = await fetch(`${lmstudioUrl}/v1/models`, {
-            method: 'GET',
-            signal: controller.signal
-        });
-        clearTimeout(timeout);
-        results.lmstudio = response.ok;
-    } catch (e) {
-        // Try a no-cors fetch to see if server is running but CORS is blocking the response
-        try {
-            const controller2 = new AbortController();
-            const timeout2 = setTimeout(() => controller2.abort(), 2000);
-            await fetch(`${lmstudioUrl}/v1/models`, {
-                method: 'GET',
-                mode: 'no-cors',
-                signal: controller2.signal
-            });
-            clearTimeout(timeout2);
-            results.lmstudio_blocked = true;
-        } catch (_) {
-            results.lmstudio = false;
-        }
-    }
+async function detectProviders(ollamaUrl, lmstudioUrl, provider = 'auto') {
+    // Probe both providers in parallel, skipping any provider the user has
+    // explicitly not selected, so one slow/absent server doesn't delay the other.
+    const skipped = { ok: false, blocked: false };
+    const [ollama, lmstudio] = await Promise.all([
+        (provider === 'ollama' || provider === 'auto') ? probeProvider(`${ollamaUrl}/api/tags`) : skipped,
+        (provider === 'lmstudio' || provider === 'auto') ? probeProvider(`${lmstudioUrl}/v1/models`) : skipped
+    ]);
 
-    return results;
+    return {
+        ollama: ollama.ok,
+        ollama_blocked: ollama.blocked,
+        lmstudio: lmstudio.ok,
+        lmstudio_blocked: lmstudio.blocked
+    };
 }
 
 async function listOllamaModels(url) {
@@ -218,23 +205,19 @@ async function listModels(settings, useCache = true) {
     const models = [];
     const provider = settings.provider;
 
-    if (provider === 'lmstudio' || provider === 'auto') {
-        try {
-            const lmstudioModels = await listLMStudioModels(settings.lmstudioUrl);
-            models.push(...lmstudioModels);
-        } catch (e) {
-            if (provider === 'lmstudio') throw e;
-        }
-    }
-
-    if (provider === 'ollama' || provider === 'auto') {
-        try {
-            const ollamaModels = await listOllamaModels(settings.ollamaUrl);
-            models.push(...ollamaModels);
-        } catch (e) {
-            if (provider === 'ollama') throw e;
-        }
-    }
+    // Query both providers in parallel; allSettled keeps results positional so
+    // LMStudio models still come first, and a failure only propagates when that
+    // provider was explicitly selected.
+    const [lmstudioResult, ollamaResult] = await Promise.allSettled([
+        (provider === 'lmstudio' || provider === 'auto')
+            ? listLMStudioModels(settings.lmstudioUrl) : Promise.resolve([]),
+        (provider === 'ollama' || provider === 'auto')
+            ? listOllamaModels(settings.ollamaUrl) : Promise.resolve([])
+    ]);
+    if (lmstudioResult.status === 'fulfilled') models.push(...lmstudioResult.value);
+    else if (provider === 'lmstudio') throw lmstudioResult.reason;
+    if (ollamaResult.status === 'fulfilled') models.push(...ollamaResult.value);
+    else if (provider === 'ollama') throw ollamaResult.reason;
 
     // Update cache
     cachedModels = models;
@@ -842,7 +825,8 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 case 'DETECT_PROVIDERS':
                     const providers = await detectProviders(
                         settings.ollamaUrl,
-                        settings.lmstudioUrl
+                        settings.lmstudioUrl,
+                        settings.provider
                     );
                     sendResponse(providers);
                     break;
