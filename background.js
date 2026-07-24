@@ -117,7 +117,7 @@ async function getSettings() {
 // Provider Detection & Model Listing
 // ============================================================================
 
-async function probeProvider(url) {
+async function probeProvider(url, originProbeUrl) {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
@@ -126,6 +126,28 @@ async function probeProvider(url) {
             signal: controller.signal
         });
         clearTimeout(timeout);
+        if (response.ok && originProbeUrl) {
+            // A GET sent by an extension carries no Origin header, so a server-side
+            // origin check (e.g. Ollama without OLLAMA_ORIGINS) lets the probe
+            // through even though it will reject the POST translation requests.
+            // Send a cheap POST, which always carries an Origin header, and treat
+            // a 403 as "running but blocking the extension".
+            try {
+                const controller3 = new AbortController();
+                const timeout3 = setTimeout(() => controller3.abort(), 2000);
+                const originResponse = await fetch(originProbeUrl, {
+                    method: 'POST',
+                    body: '{}',
+                    signal: controller3.signal
+                });
+                clearTimeout(timeout3);
+                if (originResponse.status === 403) {
+                    return { ok: false, blocked: true };
+                }
+            } catch (_) {
+                // Origin probe failed for another reason; keep the GET verdict.
+            }
+        }
         return { ok: response.ok, blocked: false };
     } catch (e) {
         // Normal fetch failed — could be server not running, or CORS blocking the response.
@@ -152,7 +174,7 @@ async function detectProviders(ollamaUrl, lmstudioUrl, provider = 'auto') {
     // explicitly not selected, so one slow/absent server doesn't delay the other.
     const skipped = { ok: false, blocked: false };
     const [ollama, lmstudio] = await Promise.all([
-        (provider === 'ollama' || provider === 'auto') ? probeProvider(`${ollamaUrl}/api/tags`) : skipped,
+        (provider === 'ollama' || provider === 'auto') ? probeProvider(`${ollamaUrl}/api/tags`, `${ollamaUrl}/api/show`) : skipped,
         (provider === 'lmstudio' || provider === 'auto') ? probeProvider(`${lmstudioUrl}/v1/models`) : skipped
     ]);
 
