@@ -6,6 +6,7 @@
 - Adopt upstream's IndexedDB translation cache (`cache.js`, three-mode `cacheMode`) and remove the fork's storage.local cache.
 - Keep fork-only features working on top of it: glossary, selection repair, per-model cache deletion, benchmark.
 - Add TranslateGemma 4B-first translation routing: use 12B only for long segments or failed/suspicious 4B output, then document the local llama.cpp settings and benchmarks.
+- Document the local Gemma 4 E4B IT benchmark against the same Secure Shell long-text input, including the 12 GiB VRAM/MTP preset.
 
 ## Work Record
 
@@ -107,6 +108,14 @@
 - Heavier llama.cpp defaults (`c = 16384`, `parallel = 4`) made simultaneous full-GPU 4B+12B residency unreliable on 12 GiB VRAM; `c = 4096`, `parallel = 1` worked and kept GPU utilization high.
 - Validation: `node --check background.js`, `node --check languages.js`, and live local llama-server smoke/benchmark requests against temporary 4B/12B servers.
 
+### Gemma 4 E4B translation benchmark (2026-07-27)
+
+- User added and started `gemma-4-E4B-it` in llama.cpp with the optimized preset from `/etc/llama.cpp/models.ini`: `unsloth/gemma-4-E4B-it-GGUF:Q4_K_M`, `n-gpu-layers = all`, `ctx-size = 393216`, `parallel = 4`, `spec-type = draft-mtp`, `spec-draft-n-max = 2`.
+- Benchmarked with the same Wikipedia "Secure Shell" 3-segment input used for the long-text routing reference: 1,916 source chars total.
+- Result over 3 measured runs after 1 warmup: 5.62 s avg wall time, 341.0 source chars/s, 964 avg output chars, 603 avg output tokens, 108.5 output tokens/s.
+- Comparison point: TranslateGemma 4B only was faster by wall time on this input (5.00 s / 382.9 chars/s) but lower in output token throughput (92.8 tok/s); Gemma 4 E4B emitted longer Japanese with a generic instruction translation prompt.
+- Practical note: the model fits just inside the 12 GiB RTX 3060 while keeping full GPU offload plus MTP draft decoding, which likely explains the strong throughput. No extension code change was made for this benchmark.
+
 ## Handoff
 
 - Cache is now **off by default** (upstream policy). Enable it in Options → Translation Cache; selection repair works with or without it.
@@ -116,4 +125,6 @@
 - Validation run: `node --check` on all six JS files, duplicate-id scan on both HTML files, and a Node smoke test of `cacheDeleteKeys` / `cacheDeleteModel` (memory layer).
 - Real-browser status: llamacpp provider confirmed working in Firefox (options provider switch + model listing + page translation against a local `llama-server`); llama-server now runs as a systemd service (`/etc/conf.d/llama.cpp`, translategemma-12b). XPI rebuild for the llamacpp feature still pending (bump version + `./mkxpi.sh`).
 - For TranslateGemma 4B/12B routing, prefer dedicated llama.cpp model aliases such as `translategemma-4b-translate` and `translategemma-12b-translate` with `c = 4096`, `parallel = 1`, `n-gpu-layers = 99`. The extension auto-routing only looks for 4B/12B TranslateGemma model IDs; keep both tokens in the aliases.
+- Gemma 4 E4B benchmark is documentation-only. If integrating it into the extension as a first-class option, decide its request format/prompt separately; it is not a TranslateGemma model, so the current 4B/12B TranslateGemma fallback logic does not apply automatically.
 - Existing unrelated local change remains in `examples/ui-labels-ja.tsv`; do not include it unless the user explicitly wants that file committed.
+- Existing untracked `memo.txt` is unrelated; leave it uncommitted unless the user explicitly asks for it.

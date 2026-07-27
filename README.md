@@ -228,6 +228,39 @@ both 4B and 12B fully on a 12 GiB RTX 3060 was not reliable. For this extension,
 `c = 4096` and `parallel = 1` are a better fit because page text is translated
 in small segments rather than as one large document.
 
+### Gemma 4 E4B Reference
+
+Measured on 2026-07-27 with the same Secure Shell input above, using
+`gemma-4-E4B-it` (`unsloth/gemma-4-E4B-it-GGUF:Q4_K_M`) through llama.cpp.
+The server preset fits on the same 12 GiB RTX 3060 with full GPU offload and
+MTP draft decoding enabled:
+
+```ini
+[gemma-4-E4B-it]
+hf = unsloth/gemma-4-E4B-it-GGUF:Q4_K_M
+chat-template-file = /home/onoue/.local/lib/models/gemma-4-E4B-it-GGUF.jinja
+n-gpu-layers = all
+ctx-size = 393216
+parallel = 4
+spec-type = draft-mtp
+spec-draft-n-max = 2
+temp = 1.0
+top-p = 0.95
+top-k = 64
+```
+
+| Model / Pattern | Avg wall time | Source chars/s | Avg output tokens/s | Notes |
+|-----------------|---------------|----------------|---------------------|-------|
+| TranslateGemma 4B only | 5.00 s | 382.9 | 92.8 | Specialized TranslateGemma prompt |
+| TranslateGemma 4B + 12B routing | 9.28 s | 206.4 | - | Long segment routed to 12B |
+| TranslateGemma 12B only | 12.30 s | 155.8 | 37.4 | Specialized TranslateGemma prompt |
+| Gemma 4 E4B IT | 5.62 s | 341.0 | 108.5 | Generic instruction translation prompt, MTP enabled |
+
+Gemma 4 E4B produced longer Japanese output in this test, so wall time was a
+little slower than TranslateGemma 4B despite higher output token throughput.
+Because it still fits fully in 12 GiB with `parallel = 4` and MTP enabled, it is
+a promising single-model option when its translation quality is good enough.
+
 ## Privacy
 
 This extension is designed to be privacy-focused:
