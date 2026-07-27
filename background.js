@@ -303,8 +303,23 @@ async function buildGlossaryBlock(settings, text, targetLanguage) {
 // /v1/... path ourselves. LM Studio's router tolerates the resulting
 // /v1/v1/... and //v1/... paths; llama.cpp and vLLM route strictly and 404,
 // which made those servers look unsupported (issue #4).
+//
+// Also rewrites a bare "localhost" host to 127.0.0.1. Ollama's default bind
+// is IPv4-only, but on systems where /etc/hosts lists "::1 localhost",
+// Firefox resolves "localhost" via IPv6 first and gets a hard connection
+// refusal instead of falling back to IPv4 - CORS logic never even runs.
 function normalizeServerUrl(rawUrl) {
-    return (rawUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '').replace(/\/+$/, '');
+    let url = (rawUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '').replace(/\/+$/, '');
+    try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'localhost') {
+            parsed.hostname = '127.0.0.1';
+            url = parsed.toString().replace(/\/+$/, '');
+        }
+    } catch (_) {
+        // Malformed input; leave as-is so the caller's fetch surfaces the real error.
+    }
+    return url;
 }
 
 async function probeProvider(url, originProbeUrl) {
