@@ -700,7 +700,7 @@ function bannerHTML(type) {
             <div style="font-weight: bold; margin-bottom: 4px; color: var(--yellow, #dbbc7f);">Ollama is blocking the extension</div>
             <div>Ollama is running, but it is not allowing requests from browser extensions (CORS policy).</div>
             <div style="margin-top: 6px;">Fix: start Ollama with the environment variable <code style="background: var(--bg1, #2b2b2b); padding: 1px 4px; border-radius: 3px;">OLLAMA_ORIGINS=*</code> (e.g. add <code style="background: var(--bg1, #2b2b2b); padding: 1px 4px; border-radius: 3px;">Environment="OLLAMA_ORIGINS=*"</code> to its systemd unit, or set it in the app's environment).</div>
-            <div style="margin-top: 6px; font-size: 11px; opacity: 0.8;"><a href="https://api.onlyoffice.com/docs/plugin-and-macros/ai/configuring-ollama-with-cors/" target="_blank" style="color: var(--accent, #a7c080);">More detailed instructions here</a>. Click the refresh button above when done.</div>
+            <div style="margin-top: 6px; font-size: 11px; opacity: 0.8;"><a href="https://github.com/Eldoprano/offline-browser-translate/blob/main/docs/ollama-cors-setup.md" target="_blank" style="color: var(--accent, #a7c080);">More detailed instructions here</a>. Click the refresh button above when done.</div>
         `;
     }
     if (type === 'cors-blocked-lmstudio') {
