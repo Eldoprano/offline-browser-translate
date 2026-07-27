@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Local LLM Translator",
-  "version": "1.6.0",
+  "version": "1.6.3",
   "description": "Privacy-focused translation using local LLMs (Ollama, LMStudio). Your data never leaves your machine.",
   "permissions": [
     "activeTab",
@@ -13,6 +13,9 @@
     "http://localhost/*"
   ],
   "optional_host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
   "web_accessible_resources": [{
     "resources": ["icons/icon48.png"],
     "matches": ["<all_urls>"]
