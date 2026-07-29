@@ -137,3 +137,9 @@
 - **Removed the fork's dedicated `llamacpp` provider** (added 2026-07-08). Upstream covers the same servers via the LMStudio / OpenAI-compatible URL field, and the network path is identical; keeping a third provider only bought simultaneous LMStudio+llama-server use at a permanent merge-conflict cost. llama-server users now put `http://localhost:8080` in the LMStudio field. `scripts/benchmark.rb` keeps its own independent `PROVIDER=llamacpp` (it talks to servers directly, not through the extension).
 - Kept fork features on top: ctx-based `translate()` with per-tab cancellation (`CANCEL_TRANSLATION`), TranslateGemma 4B→12B quality routing, selection repair, benchmark docs.
 - Settings migration: a stored `provider: 'llamacpp'` is no longer recognized — re-select the provider and move the URL into `lmstudioUrl` manually.
+
+### Upstream PR #22: cancel in-flight requests on navigation (2026-07-29)
+
+- Decided against PRing the TranslateGemma 4B/12B quality routing: benchmarks show 4B+12B routing (9.28 s) loses to single-model Gemma 4 E4B (5.62 s) on the same input, the dual-model-in-12GiB setup is too niche, and the model-name-regex routing logic is upstream-maintenance-heavy.
+- Instead extracted the fork's per-tab cancellation as https://github.com/Eldoprano/offline-browser-translate/pull/22 (branch `feat/cancel-inflight-on-navigation`, based on upstream/main): `pagehide` → `CANCEL_TRANSLATION` → refcounted per-tab AbortController linked into each fetch's timeout controller.
+- Remaining PR candidate: Selection Repair (retranslate/discard a selected segment).
