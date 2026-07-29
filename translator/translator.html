@@ -96,11 +96,18 @@
                                 <div class="lang-list" id="targetLangList"></div>
                             </div>
                         </div>
+                        <div class="panel-header-actions" id="romajiSettings" hidden>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="romajiToggle">
+                                <span class="toggle-label">Show Romaji</span>
+                            </label>
+                        </div>
                     </div>
                     <div class="panel-body">
                         <div class="target-output" id="targetOutput">
                             <span class="placeholder-text">Translation will appear here...</span>
                         </div>
+                        <div id="romajiOutput" class="romaji-output" user-select="none"></div>
                         <div class="panel-footer target-footer">
                             <span class="translation-info" id="translationInfo"></span>
                             <button class="copy-btn" id="copyBtn" title="Copy translation" hidden>
@@ -136,6 +143,7 @@
     </div>
 
     <script src="../languages.js"></script>
+    <script src="wanakana.min.js"></script>
     <script src="translator.js"></script>
 </body>
 

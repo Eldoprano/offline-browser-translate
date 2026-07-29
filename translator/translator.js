@@ -28,7 +28,8 @@ const DEFAULT_SETTINGS = {
     requestFormat: 'auto',
     temperature: 0.3,
     useStructuredOutput: true,
-    showGlow: false
+    showGlow: false,
+    showRomaji: false
 };
 
 // ============================================================================
@@ -84,6 +85,11 @@ const els = {
     // Actions
     swapBtn: document.getElementById('swapBtn'),
     translateBtn: document.getElementById('translateBtn'),
+
+    // Romaji
+    romajiSettings: document.getElementById('romajiSettings'),
+    romajiToggle: document.getElementById('romajiToggle'),
+    romajiOutput: document.getElementById('romajiOutput'),
 
     // Toast
     toast: document.getElementById('toast')
@@ -180,6 +186,13 @@ function selectLanguage(type, code) {
         closeDropdown('target');
         buildLanguageSelector('target');
     }
+
+    updateRomajiVisibility();
+}
+
+function updateRomajiVisibility() {
+    const isJapaneseInvolved = sourceLanguage === 'ja' || targetLanguage === 'ja';
+    els.romajiSettings.hidden = !isJapaneseInvolved;
 }
 
 function openDropdown(type) {
@@ -245,6 +258,7 @@ function swapLanguages() {
         placeholder.className = 'placeholder-text';
         placeholder.textContent = 'Translation will appear here...';
         els.targetOutput.appendChild(placeholder);
+        els.romajiOutput.textContent = '';
         els.copyBtn.hidden = true;
         els.translationInfo.textContent = '';
         updateCharCount();
@@ -329,6 +343,16 @@ function showTranslation(text) {
     span.className = 'translated-text';
     span.textContent = text;
     els.targetOutput.appendChild(span);
+
+    // Handle Romaji separately
+    els.romajiOutput.textContent = '';
+    if (currentSettings.showRomaji && typeof wanakana !== 'undefined' && wanakana.isJapanese(text)) {
+        const romaji = wanakana.toRomaji(text);
+        if (romaji && romaji.toLowerCase() !== text.toLowerCase()) {
+            els.romajiOutput.textContent = `(${romaji})`;
+        }
+    }
+
     els.copyBtn.hidden = false;
     els.translationInfo.textContent = `${LANGUAGES[sourceLanguage] || sourceLanguage} → ${LANGUAGES[targetLanguage] || targetLanguage}`;
 }
@@ -615,6 +639,17 @@ function setupEventListeners() {
 
     // Copy
     els.copyBtn.addEventListener('click', copyTranslation);
+
+    // Romaji toggle
+    els.romajiToggle.addEventListener('change', (e) => {
+        currentSettings.showRomaji = e.target.checked;
+        // If there's already a translation, refresh it to show/hide Romaji
+        const outputEl = els.targetOutput.querySelector('.translated-text');
+        if (outputEl) {
+            // Re-apply the translation display logic
+            showTranslation(outputEl.textContent);
+        }
+    });
 }
 
 // ============================================================================
@@ -652,6 +687,9 @@ async function init() {
 
     // Setup events
     setupEventListeners();
+
+    // Update Romaji visibility based on initial languages
+    updateRomajiVisibility();
 
     // Check provider status & load models
     await checkStatus();

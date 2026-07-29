@@ -1071,6 +1071,13 @@ function setupEventListeners() {
     // (Target-language changes are handled by langPicker.onChange.)
     // (Model changes are handled by modelPicker.onChange.)
 
+    if (elements.sourceLangOverride) {
+        elements.sourceLangOverride.addEventListener('change', () => {
+            currentSettings.sourceLanguage = elements.sourceLangOverride.value;
+            saveCurrentSettings();
+        });
+    }
+
     // Glow toggle - update in real-time
     elements.showGlow.addEventListener('change', async () => {
         currentSettings.showGlow = elements.showGlow.checked;
