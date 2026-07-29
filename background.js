@@ -790,7 +790,23 @@ async function getLMStudioModelState(url, modelId) {
 
 // PLAIN_TEXT_FORMATS comes from languages.js (shared with the UIs).
 
-async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+// Per-tab cancel controllers. A tab gets one shared controller while it has
+// translations in flight; navigating away or closing fires it to abort the
+// tab's outstanding LLM fetches instead of letting them run to the 5min timeout.
+const tabCancelControllers = new Map();
+
+// Wire an optional external cancel signal into a per-request timeout controller,
+// so the fetch aborts on whichever fires first.
+function linkCancelSignal(controller, cancelSignal) {
+    if (!cancelSignal) return;
+    if (cancelSignal.aborted) {
+        controller.abort();
+        return;
+    }
+    cancelSignal.addEventListener('abort', () => controller.abort(), { once: true });
+}
+
+async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal) {
     const body = {
         model: modelId,
         stream: false
@@ -811,6 +827,7 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
+    linkCancelSignal(controller, cancelSignal);
     let response;
     try {
         response = await fetch(`${normalizeServerUrl(settings.ollamaUrl)}/api/generate`, {
@@ -821,7 +838,9 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
         });
     } catch (e) {
         clearTimeout(timeoutId);
-        if (e.name === 'AbortError') throw new Error('Ollama request timed out after 5 minutes');
+        if (e.name === 'AbortError') {
+            throw new Error(cancelSignal?.aborted ? 'Translation cancelled' : 'Ollama request timed out after 5 minutes');
+        }
         throw e;
     }
     clearTimeout(timeoutId);
@@ -865,7 +884,7 @@ const TRANSLATION_JSON_SCHEMA = {
     "required": ["translations"],
     "additionalProperties": false
 };
-async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal) {
     const messages = [];
 
     if (systemPrompt) {
@@ -893,6 +912,7 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
+    linkCancelSignal(controller, cancelSignal);
     let response;
     try {
         response = await fetch(`${normalizeServerUrl(settings.lmstudioUrl)}/v1/chat/completions`, {
@@ -903,7 +923,9 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
         });
     } catch (e) {
         clearTimeout(timeoutId);
-        if (e.name === 'AbortError') throw new Error('LMStudio request timed out after 5 minutes');
+        if (e.name === 'AbortError') {
+            throw new Error(cancelSignal?.aborted ? 'Translation cancelled' : 'LMStudio request timed out after 5 minutes');
+        }
         if (e instanceof TypeError) {
             throw new Error('Failed to connect to LMStudio. The extension is being blocked by LMStudio\'s CORS policy or the server is offline. You need to enable CORS in LMStudio.');
         }
@@ -918,7 +940,7 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
         // the prompt already asks for JSON and the parser tolerates loose output.
         if (jsonOutput && response.status === 400 && /response_format|json_schema|guided/i.test(error)) {
             debugWarn('[Background] Server rejected structured output; retrying without response_format');
-            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false);
+            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false, cancelSignal);
         }
         throw new Error(`LMStudio error: ${error}`);
     }
@@ -939,20 +961,20 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
 }
 
 // Low-level call to whichever provider, returning { content, finishReason }.
-async function callProvider(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+async function callProvider(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal) {
     if (provider === 'ollama') {
-        return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput);
+        return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal);
     }
-    return callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput);
+    return callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal);
 }
 
 // Translate a single text as plain text (no JSON), used as the last-resort
 // fallback when structured output keeps failing. The whole response IS the
 // translation — nothing to parse, nothing to break the page.
-async function translatePlainItem(provider, settings, modelId, text, vars) {
+async function translatePlainItem(provider, settings, modelId, text, vars, cancelSignal) {
     const systemPrompt = `You are a professional translator. Translate the user's text into ${vars.targetLang}. Output ONLY the translation, with no quotes, labels, JSON, or commentary.`;
     const userPrompt = text;
-    const { content } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, false);
+    const { content } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, false, cancelSignal);
     return cleanTranslationText((content || '').trim());
 }
 
@@ -971,7 +993,7 @@ function hashString(str) {
     return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
 }
 
-async function translate(textItems, targetLanguage, settings) {
+async function translate(textItems, targetLanguage, settings, cancelSignal) {
     const modelId = settings.selectedModel;
     if (!modelId) throw new Error('No model selected');
 
@@ -1014,6 +1036,7 @@ async function translate(textItems, targetLanguage, settings) {
     // Run one batched request for the given subset of items, returning a Map of
     // id -> good translation text (suspicious/empty results are dropped).
     const requestBatch = async (items) => {
+        if (cancelSignal?.aborted) throw new Error('Translation cancelled');
         // Map items to 0-indexed sequential IDs for the prompt to avoid confusing the LLM
         const mappedItems = items.map((item, index) => ({ id: index, text: item.text, originalId: item.id }));
         
@@ -1030,7 +1053,9 @@ async function translate(textItems, targetLanguage, settings) {
             const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'), targetLanguage);
             if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
         }
-        const { content: raw, finishReason } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
+        const { content: raw, finishReason } = await callProvider(
+            provider, settings, modelId, systemPrompt, userPrompt, wantJson, cancelSignal
+        );
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
 
         // Parse using the mapped items so it expects 0, 1, 2...
@@ -1054,7 +1079,7 @@ async function translate(textItems, targetLanguage, settings) {
     const requestOne = async (text) => {
         const vars = { ...baseVars, texts: text };
         const { content } = await callProvider(provider, settings, modelId,
-            buildPrompt(systemTemplate, vars), buildPrompt(userTemplate, vars), false);
+            buildPrompt(systemTemplate, vars), buildPrompt(userTemplate, vars), false, cancelSignal);
         return cleanTranslationText((content || '').trim());
     };
 
@@ -1147,6 +1172,7 @@ async function translate(textItems, targetLanguage, settings) {
         try {
             good = await requestBatch(pending);
         } catch (e) {
+            if (cancelSignal?.aborted) throw e;
             if (attempt === maxRetries) throw e; // bubble transport errors on last try
             debugWarn(`[Background] batch attempt ${attempt + 1} threw:`, e.message);
             continue;
@@ -1173,12 +1199,13 @@ async function translate(textItems, targetLanguage, settings) {
     // batch structure to parse. Plain-text formats need this too — they carry the
     // same [id]: markers in a batched prompt, and a dropped segment shifts the rest.
     if (pending.length > 0 && settings.plainTextFallback !== false) {
+        if (cancelSignal?.aborted) throw new Error('Translation cancelled');
         debugWarn(`[Background] Falling back to per-item translation for ${pending.length} item(s)`);
         for (const item of pending) {
             try {
                 const text = isPlainText
                     ? await requestOne(item.text)
-                    : await translatePlainItem(provider, settings, modelId, item.text, baseVars);
+                    : await translatePlainItem(provider, settings, modelId, item.text, baseVars, cancelSignal);
                 if (text && !isSuspiciousTranslation(text)) results.set(item.id, text);
             } catch (e) {
                 debugWarn(`[Background] per-item fallback failed for id ${item.id}:`, e.message);
@@ -1299,7 +1326,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
                 }
 
-                case 'TRANSLATE':
+                case 'TRANSLATE': {
                     // Pass sourceLanguage for TranslateGemma support
                     let settingsWithSource = {
                         ...settings,
@@ -1323,18 +1350,58 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         };
                     }
 
-                    const result = await translate(
-                        message.texts,
-                        message.targetLanguage,
-                        settingsWithSource
-                    );
-                    sendResponse({
-                        translations: result.translations,
-                        fromCache: result.fromCache,
-                        total: result.total,
-                        cacheActive: result.cacheActive
-                    });
+                    // Share one cancel controller per tab so a single CANCEL (sent
+                    // when the page navigates away) aborts all its in-flight batches.
+                    // Refcount so we only drop the entry once the last batch settles.
+                    const tabId = sender.tab?.id;
+                    let entry;
+                    if (tabId !== undefined) {
+                        entry = tabCancelControllers.get(tabId);
+                        if (!entry) {
+                            entry = { controller: new AbortController(), refs: 0 };
+                            tabCancelControllers.set(tabId, entry);
+                        }
+                        entry.refs++;
+                    }
+
+                    try {
+                        const result = await translate(
+                            message.texts,
+                            message.targetLanguage,
+                            settingsWithSource,
+                            entry?.controller.signal
+                        );
+                        sendResponse({
+                            translations: result.translations,
+                            fromCache: result.fromCache,
+                            total: result.total,
+                            cacheActive: result.cacheActive
+                        });
+                    } finally {
+                        if (entry) {
+                            entry.refs--;
+                            if (entry.refs <= 0 && tabCancelControllers.get(tabId) === entry) {
+                                tabCancelControllers.delete(tabId);
+                            }
+                        }
+                    }
                     break;
+                }
+
+                case 'CANCEL_TRANSLATION': {
+                    // Page is navigating away / unloading — abort this tab's
+                    // outstanding LLM fetches instead of letting them run to timeout.
+                    const tabId = sender.tab?.id;
+                    if (tabId !== undefined) {
+                        const entry = tabCancelControllers.get(tabId);
+                        if (entry) {
+                            entry.controller.abort();
+                            tabCancelControllers.delete(tabId);
+                        }
+                    }
+                    sendResponse({ ok: true });
+                    break;
+                }
 
                 case 'CLEAR_CACHE':
                     try {
