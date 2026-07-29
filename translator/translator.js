@@ -16,7 +16,6 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
-    llamacppUrl: 'http://localhost:8080',
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -265,7 +264,7 @@ async function translateText() {
     if (!text || isTranslating) return;
 
     if (!selectedModel) {
-        showTranslationError('No model available. Start Ollama, LMStudio or llama.cpp and reload.');
+        showTranslationError('No model available. Start Ollama or LMStudio and reload.');
         return;
     }
 
@@ -386,7 +385,7 @@ async function checkStatus() {
     try {
         await loadSettings();
         const response = await browserAPI.runtime.sendMessage({ type: 'DETECT_PROVIDERS' });
-        const providerSetting = currentSettings.provider; // 'auto', 'ollama', 'lmstudio', 'llamacpp'
+        const providerSetting = currentSettings.provider; // 'auto', 'ollama', 'lmstudio'
 
         let activeProvider = providerSetting;
         if (activeProvider === 'auto' && selectedModelProvider) {
@@ -395,14 +394,13 @@ async function checkStatus() {
 
         let connected = false;
         let blocked = false;
-        let blockedType = ''; // 'ollama', 'lmstudio' or 'llamacpp'
+        let blockedType = ''; // 'ollama' or 'lmstudio'
         const connectedProviders = [];
 
         if (response.ollama) connectedProviders.push('Ollama');
         if (response.lmstudio) connectedProviders.push('LMStudio');
-        if (response.llamacpp) connectedProviders.push('llama.cpp');
 
-        if (activeProvider === 'ollama' || activeProvider === 'lmstudio' || activeProvider === 'llamacpp') {
+        if (activeProvider === 'ollama' || activeProvider === 'lmstudio') {
             connected = response[activeProvider];
             blocked = response[`${activeProvider}_blocked`];
             blockedType = activeProvider;
@@ -410,9 +408,8 @@ async function checkStatus() {
             // 'auto' mode with no specific model selected yet
             connected = connectedProviders.length > 0;
             if (!connected) {
-                blocked = response.ollama_blocked || response.lmstudio_blocked || response.llamacpp_blocked;
-                blockedType = response.ollama_blocked ? 'ollama'
-                    : response.lmstudio_blocked ? 'lmstudio' : 'llamacpp';
+                blocked = response.ollama_blocked || response.lmstudio_blocked;
+                blockedType = response.ollama_blocked ? 'ollama' : 'lmstudio';
             }
         }
 
@@ -425,13 +422,11 @@ async function checkStatus() {
             els.statusText.textContent = 'CORS Blocked';
             els.statusIndicator.title = blockedType === 'ollama'
                 ? 'Ollama is running but blocking the extension (CORS). Enable CORS in Ollama.'
-                : blockedType === 'lmstudio'
-                    ? 'LMStudio is running but blocking the extension (CORS). Enable CORS in LMStudio Developer settings.'
-                    : 'llama-server is running but the response is blocked (CORS). Update llama.cpp or check your proxy.';
+                : 'LMStudio is running but blocking the extension (CORS). Enable CORS in LMStudio Developer settings.';
         } else {
             dot.className = 'status-dot error';
             els.statusText.textContent = 'No provider';
-            els.statusIndicator.title = 'No LLM providers found. Start Ollama, LMStudio or llama.cpp.';
+            els.statusIndicator.title = 'No LLM providers found. Start Ollama or LMStudio.';
         }
     } catch (e) {
         dot.className = 'status-dot error';

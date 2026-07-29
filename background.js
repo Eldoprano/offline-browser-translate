@@ -16,10 +16,9 @@ if (typeof importScripts === 'function') {
 // ============================================================================
 
 const DEFAULT_SETTINGS = {
-    provider: 'auto', // 'auto', 'ollama', 'lmstudio', 'llamacpp'
+    provider: 'auto', // 'auto', 'ollama', 'lmstudio'
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
-    llamacppUrl: 'http://localhost:8080',
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto', // 'auto' = detect from page, or specific code
@@ -140,19 +139,24 @@ const GLOSSARY_PREVIEW_MAX = 200; // rows sent to the options page for the previ
 let glossaryEntries = null;     // Array<[source, target]>, lazily loaded
 let glossaryAutomaton = null;   // built Aho-Corasick root, or null
 let glossaryExactIndex = null;  // Map<source, target> for whole-segment lookups
+let glossaryTargetLang = '';    // '#target: xx' TSV directive; '' = apply to any target
+let glossarySig = null;         // content hash folded into the cache key (see promptSig)
 
 async function loadGlossary() {
     if (glossaryEntries) return glossaryEntries;
     try {
-        const result = await browserAPI.storage.local.get(GLOSSARY_KEY);
+        const result = await browserAPI.storage.local.get([GLOSSARY_KEY, GLOSSARY_META_KEY]);
         const entries = result[GLOSSARY_KEY];
         glossaryEntries = Array.isArray(entries) ? entries : [];
+        glossaryTargetLang = (result[GLOSSARY_META_KEY] && result[GLOSSARY_META_KEY].target) || '';
     } catch (e) {
         console.error('Failed to load glossary:', e);
         glossaryEntries = [];
+        glossaryTargetLang = '';
     }
     glossaryAutomaton = null;
     glossaryExactIndex = null;
+    glossarySig = null;
     return glossaryEntries;
 }
 
@@ -162,19 +166,43 @@ function invalidateGlossary() {
     glossaryEntries = null;
     glossaryAutomaton = null;
     glossaryExactIndex = null;
+    glossaryTargetLang = '';
+    glossarySig = null;
+}
+
+// A glossary maps source terms to ONE target language. When the TSV declares it
+// (via a `#target: xx` line), only apply the glossary when translating into that
+// language — otherwise a Japanese dictionary would inject Japanese into a
+// Spanish translation. Undeclared glossaries apply to every target (legacy).
+function glossaryAppliesTo(targetLanguage) {
+    if (!glossaryTargetLang) return true;
+    const base = (targetLanguage || '').split('-')[0].toLowerCase();
+    return glossaryTargetLang === base;
+}
+
+// Compact token identifying the active glossary for the translation cache key:
+// '' when the glossary is off/empty/inapplicable (so keys match the no-glossary
+// ones), else a hash of its entries. This keeps cached output honest when the
+// user toggles "Use glossary" or switches target language — without it, text
+// translated with glossary hints would be served from cache after disabling it.
+async function getGlossarySignature(settings, targetLanguage) {
+    if (settings.useGlossary === false) return '';
+    const entries = await loadGlossary();
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return '';
+    if (glossarySig === null) glossarySig = hashString(JSON.stringify(entries));
+    return glossarySig;
 }
 
 // Map of source => target for whole-segment lookups. A segment that consists
 // entirely of a glossary term (e.g. the nav heading "About") is translated
 // deterministically from this map instead of being sent to the model — prompt
 // hints only nudge the model, and short context-free labels are exactly where
-// small models produce broken output ("About" => "について"). An empty target
-// means "keep as-is", same as the prompt-hint path. Returns null when the
-// glossary is off or empty.
-async function getGlossaryExactIndex(settings) {
+// small models produce broken output. An empty target means "keep as-is", same
+// as the prompt-hint path. Returns null when the glossary is off or empty.
+async function getGlossaryExactIndex(settings, targetLanguage) {
     if (settings.useGlossary === false) return null;
     const entries = await loadGlossary();
-    if (!entries.length) return null;
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return null;
     if (!glossaryExactIndex) {
         glossaryExactIndex = new Map();
         for (const entry of entries) {
@@ -254,10 +282,10 @@ function scanGlossary(root, entries, text) {
 
 // Build the glossary instruction block for the terms found in `text`. Returns ''
 // when the glossary is empty or nothing matches, so prompts are unchanged.
-async function buildGlossaryBlock(settings, text) {
+async function buildGlossaryBlock(settings, text, targetLanguage) {
     if (settings.useGlossary === false) return '';
     const entries = await loadGlossary();
-    if (!entries.length) return '';
+    if (!entries.length || !glossaryAppliesTo(targetLanguage)) return '';
     if (!glossaryAutomaton) glossaryAutomaton = buildGlossaryAutomaton(entries);
     const hits = scanGlossary(glossaryAutomaton, entries, text);
     if (!hits.length) return '';
@@ -273,22 +301,73 @@ async function buildGlossaryBlock(settings, text) {
 // Provider Detection & Model Listing
 // ============================================================================
 
-// Probe a provider endpoint. `ok` means reachable and readable; `blocked` means
-// a normal fetch failed but a no-cors fetch succeeded — the server is running
-// yet CORS is blocking the response (opaque responses can't be read, but they
-// only resolve when the server is actually reachable).
-async function probeEndpoint(url) {
+// Normalize a user-entered server URL into a bare base (scheme://host:port):
+// trims whitespace and drops trailing slashes and a trailing /v1. Users of
+// OpenAI-compatible servers (llama.cpp, vLLM) habitually paste the base URL as
+// ".../v1" because that's what OpenAI clients expect, but we append the full
+// /v1/... path ourselves. LM Studio's router tolerates the resulting
+// /v1/v1/... and //v1/... paths; llama.cpp and vLLM route strictly and 404,
+// which made those servers look unsupported (issue #4).
+//
+// Also rewrites a bare "localhost" host to 127.0.0.1. Ollama's default bind
+// is IPv4-only, but on systems where /etc/hosts lists "::1 localhost",
+// Firefox resolves "localhost" via IPv6 first and gets a hard connection
+// refusal instead of falling back to IPv4 - CORS logic never even runs.
+function normalizeServerUrl(rawUrl) {
+    let url = (rawUrl || '').trim().replace(/\/+$/, '').replace(/\/v1$/i, '').replace(/\/+$/, '');
+    try {
+        const parsed = new URL(url);
+        if (parsed.hostname === 'localhost') {
+            parsed.hostname = '127.0.0.1';
+            url = parsed.toString().replace(/\/+$/, '');
+        }
+    } catch (_) {
+        // Malformed input; leave as-is so the caller's fetch surfaces the real error.
+    }
+    return url;
+}
+
+async function probeProvider(url, originProbeUrl) {
     try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-        const response = await fetch(url, { method: 'GET', signal: controller.signal });
+        const response = await fetch(url, {
+            method: 'GET',
+            signal: controller.signal
+        });
         clearTimeout(timeout);
+        if (response.ok && originProbeUrl) {
+            // A GET sent by an extension carries no Origin header, so a server-side
+            // origin check (e.g. Ollama without OLLAMA_ORIGINS) lets the probe
+            // through even though it will reject the POST translation requests.
+            // Send a cheap POST, which always carries an Origin header, and treat
+            // a 403 as "running but blocking the extension".
+            try {
+                const controller3 = new AbortController();
+                const timeout3 = setTimeout(() => controller3.abort(), 2000);
+                const originResponse = await fetch(originProbeUrl, {
+                    method: 'POST',
+                    body: '{}',
+                    signal: controller3.signal
+                });
+                clearTimeout(timeout3);
+                if (originResponse.status === 403) {
+                    return { ok: false, blocked: true };
+                }
+            } catch (_) {
+                // Origin probe failed for another reason; keep the GET verdict.
+            }
+        }
         return { ok: response.ok, blocked: false };
     } catch (e) {
         try {
             const controller2 = new AbortController();
             const timeout2 = setTimeout(() => controller2.abort(), 2000);
-            await fetch(url, { method: 'GET', mode: 'no-cors', signal: controller2.signal });
+            await fetch(url, {
+                method: 'GET',
+                mode: 'no-cors',
+                signal: controller2.signal
+            });
             clearTimeout(timeout2);
             return { ok: false, blocked: true };
         } catch (_) {
@@ -297,20 +376,27 @@ async function probeEndpoint(url) {
     }
 }
 
-async function detectProviders(ollamaUrl, lmstudioUrl, llamacppUrl) {
-    const [ollama, lmstudio, llamacpp] = await Promise.all([
-        probeEndpoint(`${ollamaUrl}/api/tags`),
-        probeEndpoint(`${lmstudioUrl}/v1/models`),
-        probeEndpoint(`${llamacppUrl}/v1/models`)
+async function detectProviders(ollamaUrl, lmstudioUrl, provider = 'auto') {
+    ollamaUrl = normalizeServerUrl(ollamaUrl);
+    lmstudioUrl = normalizeServerUrl(lmstudioUrl);
+    // Probe both providers in parallel, skipping any provider the user has
+    // explicitly not selected, so one slow/absent server doesn't delay the other.
+    const skipped = { ok: false, blocked: false };
+    const [ollama, lmstudio] = await Promise.all([
+        (provider === 'ollama' || provider === 'auto') ? probeProvider(`${ollamaUrl}/api/tags`, `${ollamaUrl}/api/show`) : skipped,
+        (provider === 'lmstudio' || provider === 'auto') ? probeProvider(`${lmstudioUrl}/v1/models`) : skipped
     ]);
+
     return {
-        ollama: ollama.ok, ollama_blocked: ollama.blocked,
-        lmstudio: lmstudio.ok, lmstudio_blocked: lmstudio.blocked,
-        llamacpp: llamacpp.ok, llamacpp_blocked: llamacpp.blocked
+        ollama: ollama.ok,
+        ollama_blocked: ollama.blocked,
+        lmstudio: lmstudio.ok,
+        lmstudio_blocked: lmstudio.blocked
     };
 }
 
 async function listOllamaModels(url) {
+    url = normalizeServerUrl(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
@@ -326,27 +412,19 @@ async function listOllamaModels(url) {
     }
 }
 
-// LMStudio and llama.cpp's llama-server both expose the OpenAI-compatible API
-// (GET /v1/models, POST /v1/chat/completions), so they share one client; only
-// the base URL setting and the label used in error messages differ.
-const OPENAI_COMPAT = {
-    lmstudio: { label: 'LMStudio', urlKey: 'lmstudioUrl' },
-    llamacpp: { label: 'llama.cpp', urlKey: 'llamacppUrl' }
-};
-
-async function listOpenAICompatModels(url, provider) {
-    const label = OPENAI_COMPAT[provider].label;
+async function listLMStudioModels(url) {
+    url = normalizeServerUrl(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
         const response = await fetch(`${url}/v1/models`, { signal: controller.signal });
         clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`Failed to fetch ${label} models`);
+        if (!response.ok) throw new Error('Failed to fetch LMStudio models');
         const data = await response.json();
-        return (data.data || []).map(m => ({ id: m.id, name: m.id, provider }));
+        return (data.data || []).map(m => ({ id: m.id, name: m.id, provider: 'lmstudio' }));
     } catch (e) {
         clearTimeout(timeoutId);
-        if (e.name === 'AbortError') throw new Error(`${label} model listing timed out`);
+        if (e.name === 'AbortError') throw new Error('LMStudio model listing timed out');
         throw e;
     }
 }
@@ -362,32 +440,19 @@ async function listModels(settings, useCache = true) {
 
     const models = [];
 
-    if (provider === 'lmstudio' || provider === 'auto') {
-        try {
-            const lmstudioModels = await listOpenAICompatModels(settings.lmstudioUrl, 'lmstudio');
-            models.push(...lmstudioModels);
-        } catch (e) {
-            if (provider === 'lmstudio') throw e;
-        }
-    }
-
-    if (provider === 'ollama' || provider === 'auto') {
-        try {
-            const ollamaModels = await listOllamaModels(settings.ollamaUrl);
-            models.push(...ollamaModels);
-        } catch (e) {
-            if (provider === 'ollama') throw e;
-        }
-    }
-
-    if (provider === 'llamacpp' || provider === 'auto') {
-        try {
-            const llamacppModels = await listOpenAICompatModels(settings.llamacppUrl, 'llamacpp');
-            models.push(...llamacppModels);
-        } catch (e) {
-            if (provider === 'llamacpp') throw e;
-        }
-    }
+    // Query both providers in parallel; allSettled keeps results positional so
+    // LMStudio models still come first, and a failure only propagates when that
+    // provider was explicitly selected.
+    const [lmstudioResult, ollamaResult] = await Promise.allSettled([
+        (provider === 'lmstudio' || provider === 'auto')
+            ? listLMStudioModels(settings.lmstudioUrl) : Promise.resolve([]),
+        (provider === 'ollama' || provider === 'auto')
+            ? listOllamaModels(settings.ollamaUrl) : Promise.resolve([])
+    ]);
+    if (lmstudioResult.status === 'fulfilled') models.push(...lmstudioResult.value);
+    else if (provider === 'lmstudio') throw lmstudioResult.reason;
+    if (ollamaResult.status === 'fulfilled') models.push(...ollamaResult.value);
+    else if (provider === 'ollama') throw ollamaResult.reason;
 
     // Update cache
     cachedModels = models;
@@ -700,7 +765,7 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
     linkCancelSignal(controller, cancelSignal);
     let response;
     try {
-        response = await fetch(`${settings.ollamaUrl}/api/generate`, {
+        response = await fetch(`${normalizeServerUrl(settings.ollamaUrl)}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -748,8 +813,7 @@ const TRANSLATION_JSON_SCHEMA = {
     "additionalProperties": false
 };
 
-async function callOpenAICompat(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal) {
-    const { label, urlKey } = OPENAI_COMPAT[provider];
+async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal) {
     const messages = [];
 
     if (systemPrompt) {
@@ -780,7 +844,7 @@ async function callOpenAICompat(provider, settings, modelId, systemPrompt, userP
     linkCancelSignal(controller, cancelSignal);
     let response;
     try {
-        response = await fetch(`${settings[urlKey]}/v1/chat/completions`, {
+        response = await fetch(`${normalizeServerUrl(settings.lmstudioUrl)}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -788,9 +852,9 @@ async function callOpenAICompat(provider, settings, modelId, systemPrompt, userP
         });
     } catch (e) {
         clearTimeout(timeoutId);
-        if (e.name === 'AbortError') throw new Error(`${label} request timed out after 5 minutes`);
+        if (e.name === 'AbortError') throw new Error('LMStudio request timed out after 5 minutes');
         if (e instanceof TypeError) {
-            throw new Error(`Failed to connect to ${label}. The extension is being blocked by ${label}'s CORS policy or the server is offline.`);
+            throw new Error("Failed to connect to LMStudio. The extension is being blocked by LMStudio's CORS policy or the server is offline.");
         }
         throw e;
     }
@@ -798,7 +862,14 @@ async function callOpenAICompat(provider, settings, modelId, systemPrompt, userP
 
     if (!response.ok) {
         const error = await response.text();
-        throw new Error(`${label} error: ${error}`);
+        // Older OpenAI-compatible servers (llama.cpp before mid-2024, older vLLM)
+        // reject response_format json_schema with a 400. Retry once without it —
+        // the prompt already asks for JSON and the parser tolerates loose output.
+        if (jsonOutput && response.status === 400 && /response_format|json_schema|guided/i.test(error)) {
+            debugWarn('[Background] Server rejected structured output; retrying without response_format');
+            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false, cancelSignal);
+        }
+        throw new Error(`LMStudio error: ${error}`);
     }
 
     const data = await response.json();
@@ -815,8 +886,7 @@ async function callProvider(provider, settings, modelId, systemPrompt, userPromp
     if (provider === 'ollama') {
         return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal);
     }
-    const compat = OPENAI_COMPAT[provider] ? provider : 'lmstudio';
-    return callOpenAICompat(compat, settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal);
+    return callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, cancelSignal);
 }
 
 // Translate a single text as plain text (no JSON), used as the last-resort
@@ -847,7 +917,7 @@ function hashString(str) {
 // Signature of everything about the prompt shape that affects model output for
 // a given settings+model pair. Shared by translate() and the cache-entry
 // deletion handler so both derive identical cache keys.
-function promptSigFor(settings, modelId) {
+function promptSigFor(settings, modelId, glossarySig = '') {
     const format = resolveRequestFormat(settings, modelId);
     const isPlainText = PLAIN_TEXT_FORMATS.has(format);
     const template = PROMPT_TEMPLATES[format] || PROMPT_TEMPLATES.default;
@@ -860,7 +930,7 @@ function promptSigFor(settings, modelId) {
     const wantJson = !!settings.useStructuredOutput && !isPlainText;
     return hashString([
         format, wantJson ? 'json' : 'plain', String(settings.temperature),
-        systemTemplate, userTemplate
+        systemTemplate, userTemplate, glossarySig
     ].join('\u0000'));
 }
 
@@ -927,8 +997,13 @@ async function translate(textItems, targetLanguage, settings, cancelSignal) {
 
         // Prepend matching glossary terms so the model keeps proper nouns
         // consistent. Empty when the glossary is off/unmatched (prompt unchanged).
-        const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'));
-        if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
+        // Skipped for plain-text formats (TranslateGemma, Hunyuan-MT): those
+        // models expect a fixed prompt shape and would treat an extra instruction
+        // block as text to translate. Whole-segment mappings still apply to them.
+        if (!ctx.isPlainText) {
+            const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'), targetLanguage);
+            if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
+        }
         const raw = await callProvider(ctx.provider, settings, ctx.modelId, systemPrompt, userPrompt, ctx.wantJson, cancelSignal);
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
         
@@ -960,7 +1035,7 @@ async function translate(textItems, targetLanguage, settings, cancelSignal) {
     // text, which still de-dups within the request. cacheKey/cache* come from cache.js.
     const cacheEnabled = settings.cacheMode !== 'off'
         && typeof cacheGetMany === 'function' && typeof cacheKey === 'function';
-    const promptSig = promptSigFor(settings, modelId);
+    const promptSig = promptSigFor(settings, modelId, await getGlossarySignature(settings, targetLanguage));
     const keyFor = cacheEnabled
         ? (text) => cacheKey(modelId, sourceLangCode, targetLanguage, promptSig, text)
         : (text) => text;
@@ -978,7 +1053,7 @@ async function translate(textItems, targetLanguage, settings, cancelSignal) {
     // and the model — the user's explicit mapping beats both a cached LLM answer
     // and a fresh one. Not written to the cache (the lookup is cheaper than it).
     let glossaryExactCount = 0;
-    const exactIndex = await getGlossaryExactIndex(settings);
+    const exactIndex = await getGlossaryExactIndex(settings, targetLanguage);
     if (exactIndex) {
         for (const g of groups.values()) {
             const direct = exactIndex.get(g.item.text.trim());
@@ -1166,7 +1241,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     const providers = await detectProviders(
                         settings.ollamaUrl,
                         settings.lmstudioUrl,
-                        settings.llamacppUrl
+                        settings.provider
                     );
                     sendResponse(providers);
                     break;
@@ -1213,7 +1288,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     const srcRaw = message.sourceLanguage || settings.sourceLanguage;
                     const source = srcRaw && srcRaw !== 'auto' ? srcRaw : 'en';
-                    const sig = promptSigFor(settings, modelId);
+                    const sig = promptSigFor(settings, modelId, await getGlossarySignature(settings, targetLang));
                     const keys = texts.map(t => cacheKey(modelId, source, targetLang, sig, t));
                     try {
                         const removed = await cacheDeleteKeys(keys);
@@ -1223,46 +1298,6 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     }
                     break;
                 }
-
-                case 'SAVE_GLOSSARY': {
-                    // entries: Array<[source, target]> already parsed by the options page.
-                    const entries = Array.isArray(message.entries) ? message.entries : [];
-                    const meta = {
-                        name: typeof message.name === 'string' ? message.name : '',
-                        loadedAt: Date.now()
-                    };
-                    await browserAPI.storage.local.set({ [GLOSSARY_KEY]: entries, [GLOSSARY_META_KEY]: meta });
-                    invalidateGlossary();
-                    // Glossary changes the output for the same source text — drop stale cache.
-                    if (typeof cacheClear === 'function') await cacheClear();
-                    sendResponse({ ok: true, count: entries.length });
-                    break;
-                }
-
-                case 'GET_GLOSSARY_INFO': {
-                    const entries = await loadGlossary();
-                    let meta = null;
-                    try {
-                        const result = await browserAPI.storage.local.get(GLOSSARY_META_KEY);
-                        meta = result[GLOSSARY_META_KEY] || null;
-                    } catch (e) { /* meta is cosmetic — count/preview still work */ }
-                    sendResponse({
-                        count: entries.length,
-                        name: meta && meta.name || '',
-                        loadedAt: meta && meta.loadedAt || null,
-                        // First rows only: enough to eyeball the dictionary without
-                        // shipping tens of thousands of pairs to the options page.
-                        preview: entries.slice(0, GLOSSARY_PREVIEW_MAX)
-                    });
-                    break;
-                }
-
-                case 'CLEAR_GLOSSARY':
-                    await browserAPI.storage.local.remove([GLOSSARY_KEY, GLOSSARY_META_KEY]);
-                    invalidateGlossary();
-                    if (typeof cacheClear === 'function') await cacheClear();
-                    sendResponse({ ok: true });
-                    break;
 
                 case 'TRANSLATE': {
                     // Pass sourceLanguage for TranslateGemma support
@@ -1365,6 +1400,50 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ ok: true });
                     break;
                 }
+
+                case 'SAVE_GLOSSARY': {
+                    // entries: Array<[source, target]> already parsed by the options page.
+                    const entries = Array.isArray(message.entries) ? message.entries : [];
+                    const meta = {
+                        name: typeof message.name === 'string' ? message.name : '',
+                        // Target language declared by a '#target: xx' line in the
+                        // TSV; '' means the glossary applies to any target language.
+                        target: typeof message.target === 'string' ? message.target.split('-')[0].toLowerCase() : '',
+                        loadedAt: Date.now()
+                    };
+                    await browserAPI.storage.local.set({ [GLOSSARY_KEY]: entries, [GLOSSARY_META_KEY]: meta });
+                    invalidateGlossary();
+                    // Glossary changes the output for the same source text — drop stale cache.
+                    if (typeof cacheClear === 'function') await cacheClear();
+                    sendResponse({ ok: true, count: entries.length });
+                    break;
+                }
+
+                case 'GET_GLOSSARY_INFO': {
+                    const entries = await loadGlossary();
+                    let meta = null;
+                    try {
+                        const result = await browserAPI.storage.local.get(GLOSSARY_META_KEY);
+                        meta = result[GLOSSARY_META_KEY] || null;
+                    } catch (e) { /* meta is cosmetic — count/preview still work */ }
+                    sendResponse({
+                        count: entries.length,
+                        name: meta && meta.name || '',
+                        target: meta && meta.target || '',
+                        loadedAt: meta && meta.loadedAt || null,
+                        // First rows only: enough to eyeball the dictionary without
+                        // shipping tens of thousands of pairs to the options page.
+                        preview: entries.slice(0, GLOSSARY_PREVIEW_MAX)
+                    });
+                    break;
+                }
+
+                case 'CLEAR_GLOSSARY':
+                    await browserAPI.storage.local.remove([GLOSSARY_KEY, GLOSSARY_META_KEY]);
+                    invalidateGlossary();
+                    if (typeof cacheClear === 'function') await cacheClear();
+                    sendResponse({ ok: true });
+                    break;
 
                 default:
                     sendResponse({ error: 'Unknown message type' });

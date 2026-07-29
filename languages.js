@@ -204,7 +204,7 @@ function getLanguageCode(name) {
 // Add a new model family by adding one entry here — nothing else needs to change.
 const MODEL_FORMAT_RULES = [
     { format: 'translategemma', plainText: true, patterns: ['translategemma', 'translate-gemma', 'translate_gemma'] },
-    { format: 'hunyuan',        plainText: true, patterns: ['hunyuan-mt', 'hunyuanmt', 'hunyuan_mt'] }
+    { format: 'hunyuan',        plainText: true, patterns: ['hunyuan-mt', 'hunyuanmt', 'hunyuan_mt', 'hy-mt', 'hy_mt'] }
 ];
 
 // Formats that produce plain text instead of JSON (derived from the rules above).

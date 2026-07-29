@@ -842,12 +842,6 @@ textarea.highlight-vars {
   border: 1px solid rgba(214, 153, 182, 0.3);
 }
 
-.model-provider-badge--llamacpp {
-  background: rgba(127, 187, 179, 0.12);
-  color: var(--blue);
-  border: 1px solid rgba(127, 187, 179, 0.3);
-}
-
 /* Disabled model trigger (loading / error states) */
 .model-picker-trigger:disabled {
   opacity: 0.55;

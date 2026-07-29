@@ -128,3 +128,12 @@
 - Gemma 4 E4B benchmark is documentation-only. If integrating it into the extension as a first-class option, decide its request format/prompt separately; it is not a TranslateGemma model, so the current 4B/12B TranslateGemma fallback logic does not apply automatically.
 - Existing unrelated local change remains in `examples/ui-labels-ja.tsv`; do not include it unless the user explicitly wants that file committed.
 - Existing untracked `memo.txt` is unrelated; leave it uncommitted unless the user explicitly asks for it.
+
+### Upstream v1.6.4 merge — llamacpp provider retired (2026-07-29)
+
+- Merged `upstream/main` (d2b0907, v1.6.4). Upstream had squash-re-authored fork PR #16 (glossary) and then hardened it, so histories diverged textually; conflicts in 8 files.
+- Adopted upstream's glossary plumbing wholesale: `#target:` TSV directive with `glossaryAppliesTo()`, `getGlossarySignature()` folded into the cache key (as a new third arg to the fork's `promptSigFor`), `SAVE_GLOSSARY`/`GET_GLOSSARY_INFO` with `target` meta, glossary block skipped for plain-text formats.
+- Adopted upstream's provider plumbing: `normalizeServerUrl()` (trailing `/v1` strip + `localhost`→`127.0.0.1`), `probeProvider()` with the Ollama origin-block POST probe, parallel `detectProviders`/`listModels`, and the `response_format` 400 retry in `callLMStudio` (cancelSignal threaded through).
+- **Removed the fork's dedicated `llamacpp` provider** (added 2026-07-08). Upstream covers the same servers via the LMStudio / OpenAI-compatible URL field, and the network path is identical; keeping a third provider only bought simultaneous LMStudio+llama-server use at a permanent merge-conflict cost. llama-server users now put `http://localhost:8080` in the LMStudio field. `scripts/benchmark.rb` keeps its own independent `PROVIDER=llamacpp` (it talks to servers directly, not through the extension).
+- Kept fork features on top: ctx-based `translate()` with per-tab cancellation (`CANCEL_TRANSLATION`), TranslateGemma 4B→12B quality routing, selection repair, benchmark docs.
+- Settings migration: a stored `provider: 'llamacpp'` is no longer recognized — re-select the provider and move the URL into `lmstudioUrl` manually.

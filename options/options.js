@@ -9,7 +9,6 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
-    llamacppUrl: 'http://localhost:8080',
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -76,7 +75,6 @@ const elements = {
     providerSelect: document.getElementById('providerSelect'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
-    llamacppUrl: document.getElementById('llamacppUrl'),
     modelSelect: document.getElementById('modelSelect'),
     refreshModels: document.getElementById('refreshModels'),
     sourceLanguage: document.getElementById('sourceLanguage'),
@@ -305,7 +303,6 @@ function applySettingsToUI() {
     elements.providerSelect.value = currentSettings.provider;
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
-    if (elements.llamacppUrl) elements.llamacppUrl.value = currentSettings.llamacppUrl;
     elements.sourceLanguage.value = currentSettings.sourceLanguage || 'auto';
     elements.targetLanguage.value = currentSettings.targetLanguage;
     elements.requestFormat.value = currentSettings.requestFormat;
@@ -397,7 +394,6 @@ async function saveCurrentSettings() {
         provider: elements.providerSelect.value,
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
-        llamacppUrl: elements.llamacppUrl ? elements.llamacppUrl.value : currentSettings.llamacppUrl,
         selectedModel: elements.modelSelect?.value || currentSettings.selectedModel,
         sourceLanguage: elements.sourceLanguage.value,
         targetLanguage: elements.targetLanguage.value,
@@ -425,21 +421,29 @@ async function saveCurrentSettings() {
     });
 }
 
-// Parse a TSV glossary into [source, target] pairs.
+// Parse a TSV glossary into { entries: Array<[source, target]>, target: string }.
 // One entry per line: `source<TAB>translation`. A missing/empty second column
-// means "keep as-is". Lines starting with '#' and blank lines are skipped.
+// means "keep as-is". Lines starting with '#' and blank lines are skipped,
+// except a `#target: xx` directive, which declares the language the glossary
+// translates INTO — it is then only applied when translating to that language.
+// Duplicate sources keep the last occurrence.
 function parseGlossaryTSV(text) {
-    const entries = [];
+    const bySource = new Map();
+    let target = '';
     const lines = text.split(/\r?\n/);
     for (const line of lines) {
-        if (!line || line[0] === '#') continue;
+        if (!line) continue;
+        if (line[0] === '#') {
+            const directive = line.match(/^#\s*target\s*:\s*([A-Za-z-]+)/i);
+            if (directive) target = directive[1].split('-')[0].toLowerCase();
+            continue;
+        }
         const tab = line.indexOf('\t');
         const source = (tab === -1 ? line : line.slice(0, tab)).trim();
         if (!source) continue;
-        const target = tab === -1 ? '' : line.slice(tab + 1).trim();
-        entries.push([source, target]);
+        bySource.set(source, tab === -1 ? '' : line.slice(tab + 1).trim());
     }
-    return entries;
+    return { entries: [...bySource.entries()], target };
 }
 
 // Refresh the glossary status line (count, file name, load time) and the
@@ -461,6 +465,10 @@ async function refreshGlossaryStatus() {
 
     let status = `✅ ${count.toLocaleString()} term${count === 1 ? '' : 's'} loaded`;
     if (res.name) status += ` from ${res.name}`;
+    if (res.target) {
+        const langName = (typeof LANGUAGES !== 'undefined' && LANGUAGES[res.target]) || res.target;
+        status += `, applied when translating to ${langName}`;
+    }
     if (res.loadedAt) status += ` (${new Date(res.loadedAt).toLocaleString()})`;
     elements.glossaryStatus.textContent = status + '.';
     elements.glossaryStatus.classList.add('glossary-status-loaded');
@@ -564,8 +572,7 @@ function setupEventListeners() {
         // Must run inside this click gesture, before any other awaits.
         const granted = await ensureHostPermissions([
             elements.ollamaUrl.value,
-            elements.lmstudioUrl.value,
-            elements.llamacppUrl?.value
+            elements.lmstudioUrl.value
         ]);
         await saveCurrentSettings();
         if (!granted) {
@@ -608,12 +615,12 @@ function setupEventListeners() {
             if (!file) return;
             try {
                 const text = await file.text();
-                const entries = parseGlossaryTSV(text);
+                const { entries, target } = parseGlossaryTSV(text);
                 if (!entries.length) {
                     showToast('No valid entries found in file', 'error');
                     return;
                 }
-                const res = await browserAPI.runtime.sendMessage({ type: 'SAVE_GLOSSARY', entries, name: file.name });
+                const res = await browserAPI.runtime.sendMessage({ type: 'SAVE_GLOSSARY', entries, target, name: file.name });
                 if (res && res.ok) {
                     await refreshGlossaryStatus();
                     showToast(`Glossary loaded: ${res.count} terms`);

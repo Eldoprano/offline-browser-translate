@@ -21,13 +21,15 @@ You need one of these running locally:
 
 - **[Ollama](https://ollama.ai/)** (default: `http://localhost:11434`)
 - **[LMStudio](https://lmstudio.ai/)** (default: `http://localhost:1234`)
-- **[llama.cpp](https://github.com/ggml-org/llama.cpp)** `llama-server` (default: `http://localhost:8080`)
+- **Any OpenAI-compatible server** — [llama.cpp](https://github.com/ggml-org/llama.cpp)'s `llama-server`, [vLLM](https://github.com/vllm-project/vllm), etc. Put the server's base URL (e.g. `http://localhost:8080`) in the **LMStudio / OpenAI-compatible URL** field; a trailing `/v1` is tolerated and stripped automatically
 
 With a translation-capable model loaded (e.g. `TranslateGemma`, `tencent.hunyuan-mt`, `qwen3`, etc.)
 
 ### llama.cpp setup
 
-`llama-server` exposes an OpenAI-compatible API, which this extension uses directly:
+`llama-server` exposes an OpenAI-compatible API, which this extension uses
+directly — enter `http://localhost:8080` in the **LMStudio / OpenAI-compatible
+URL** field:
 
 ```sh
 llama-server \
@@ -82,14 +84,14 @@ treated as a literal template string.)
 
 ### Remote servers and gateways
 
-The llama.cpp provider speaks the plain OpenAI-compatible API
+The LMStudio path speaks the plain OpenAI-compatible API
 (`GET /v1/models`, `POST /v1/chat/completions`), so it also works with any
 endpoint that exposes it: `llama-server` on another machine, vLLM, or an AI
 gateway such as [Tailscale Aperture](https://tailscale.com/docs/aperture) —
 useful for translating on a machine without a GPU by borrowing one over your
 tailnet.
 
-Point the **llama.cpp URL** at the remote endpoint (e.g.
+Point the **LMStudio / OpenAI-compatible URL** at the remote endpoint (e.g.
 `http://myserver.my-tailnet.ts.net`). For non-localhost URLs the extension
 asks for host permission for that origin when you hit Save — an explicit
 opt-in, since the extension ships with localhost-only permissions.
@@ -277,8 +279,8 @@ Click **Advanced Settings** to configure:
 
 | Setting | Description |
 |---------|-------------|
-| Provider | Auto-detect, Ollama only, LMStudio only, or llama.cpp only |
-| URLs | Custom endpoints for Ollama/LMStudio/llama.cpp |
+| Provider | Auto-detect, Ollama only, or LMStudio/OpenAI-compatible only |
+| URLs | Custom endpoints for Ollama and LMStudio/OpenAI-compatible servers |
 | Max tokens/items per batch | Control batch sizes |
 | Temperature | Model creativity (lower = more consistent) |
 | Request Format (*work in progress*) | Default JSON, Hunyuan-MT, Simple, or Custom |
@@ -301,14 +303,14 @@ To avoid re-translating the same text over and over (forum boilerplate, menus, u
 
 ## Glossary
 
-Load a TSV dictionary (Options → Glossary) to pin translations for specific terms. Each line is `source<TAB>translation`; leave the second column empty to keep the term untranslated. Matching is case-sensitive.
+Load a TSV dictionary (Options → Glossary) to pin translations for specific terms. Each line is `source<TAB>translation`; leave the second column empty to keep the term untranslated. Matching is case-sensitive. A `#target: ja` line declares the language the glossary translates into — the glossary is then only applied when that target language is selected (recommended, since a glossary maps terms into one specific language).
 
 It works at two levels:
 
 - **Inside sentences** — glossary terms found in the text being translated are injected into the prompt as hard hints, so the model keeps proper nouns consistent (e.g. *The Companions* → *同胞団* everywhere). Only matching terms are sent, so a large dictionary is fine.
 - **Whole segments** — when a segment consists *entirely* of a glossary term, the mapping is applied directly and the model is skipped. This is the reliable way to fix short context-free labels that small models mangle — e.g. add `About<TAB>概要` and the nav heading "About" always becomes "概要" instead of the broken "について".
 
-Whole-segment matches take priority over the translation cache, and loading or clearing a glossary wipes the cache (the same source text now translates differently). See `examples/` for sample dictionaries.
+Whole-segment matches take priority over the translation cache, and loading or clearing a glossary wipes the cache (the same source text now translates differently). Note: models with a fixed prompt format (TranslateGemma, Hunyuan-MT) only get the whole-segment treatment — injecting instruction blocks into their prompts corrupts their output. See `examples/` for a sample dictionary.
 
 ## File Structure
 
