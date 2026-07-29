@@ -143,3 +143,9 @@
 - Decided against PRing the TranslateGemma 4B/12B quality routing: benchmarks show 4B+12B routing (9.28 s) loses to single-model Gemma 4 E4B (5.62 s) on the same input, the dual-model-in-12GiB setup is too niche, and the model-name-regex routing logic is upstream-maintenance-heavy.
 - Instead extracted the fork's per-tab cancellation as https://github.com/Eldoprano/offline-browser-translate/pull/22 (branch `feat/cancel-inflight-on-navigation`, based on upstream/main): `pagehide` → `CANCEL_TRANSLATION` → refcounted per-tab AbortController linked into each fetch's timeout controller.
 - Remaining PR candidate: Selection Repair (retranslate/discard a selected segment).
+
+### Host permission for 127.0.0.1 (2026-07-29)
+
+- After the v1.6.4 merge, model listing failed: upstream's `normalizeServerUrl` rewrites `localhost` → `127.0.0.1`, but `host_permissions` only covered `http://localhost/*`, so rewritten requests lost the extension's CORS exemption (llama-server sends no `Access-Control-Allow-Origin` at all — verified with curl). Fixed by adding `http://127.0.0.1/*` to `host_permissions`.
+- Also verified end-to-end after the merge: model listing via the LMStudio/OpenAI-compatible path against llama-server on :8080, and full page translation (E4B). Note: the URL must be saved in settings first — refresh uses the stored `lmstudioUrl`, not the field value.
+- Upstream has the same bug; submitted as a separate PR.
