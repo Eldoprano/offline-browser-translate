@@ -288,6 +288,23 @@ little slower than TranslateGemma 4B despite higher output token throughput.
 Because it still fits fully in 12 GiB with `parallel = 4` and MTP enabled, it is
 a promising single-model option when its translation quality is good enough.
 
+### Gemma 4 E4B QAT Comparison
+
+Measured on 2026-07-31 through the same llama.cpp router on an RTX 3060 12 GiB.
+This benchmark uses the bundled `scripts/benchmark.rb` input (8 English
+segments, 584 source characters), with one warmup run and three measured runs.
+It is intentionally separate from the Secure Shell reference above, which uses
+a longer input.
+
+| Model | Quantization | Avg wall time | Source chars/s | Avg output tokens/s |
+|-------|--------------|---------------|----------------|---------------------|
+| Gemma 4 E4B IT | `Q4_K_M` | 11.37 s | 52.0 | 127.8 |
+| Gemma 4 E4B IT QAT | `UD-Q4_K_XL` | 6.38 s | 94.0 | 203.0 |
+
+The QAT model reduced wall-clock time by 43.9% and increased generation
+throughput by 58.9% in this test. It is a strong speed option, but evaluate
+translation quality on the target content before making it the default.
+
 ## Privacy
 
 This extension is designed to be privacy-focused:

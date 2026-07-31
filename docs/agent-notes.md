@@ -116,6 +116,13 @@
 - Comparison point: TranslateGemma 4B only was faster by wall time on this input (5.00 s / 382.9 chars/s) but lower in output token throughput (92.8 tok/s); Gemma 4 E4B emitted longer Japanese with a generic instruction translation prompt.
 - Practical note: the model fits just inside the 12 GiB RTX 3060 while keeping full GPU offload plus MTP draft decoding, which likely explains the strong throughput. No extension code change was made for this benchmark.
 
+### Gemma 4 E4B QAT benchmark (2026-07-31)
+
+- Added the `gemma-4-E4B-it-qat` llama.cpp router preset: `unsloth/gemma-4-E4B-it-qat-GGUF:UD-Q4_K_XL`, full GPU offload, `ctx-size = 393216`, `parallel = 4`, MTP with `spec-draft-n-max = 4`.
+- Same `scripts/benchmark.rb` input (8 English segments / 584 source characters) on the RTX 3060 12 GiB: QAT averaged 6.38 s, 94.0 source chars/s, and 203.0 output tokens/s over three measured runs after one warmup.
+- The regular `gemma-4-E4B-it` Q4_K_M preset measured 11.37 s, 52.0 source chars/s, and 127.8 output tokens/s on the same input. QAT reduced wall-clock time by 43.9% and increased generation throughput by 58.9%.
+- README records the comparison separately from the older 1,916-character Secure Shell reference. QAT is the faster option, but translation quality needs evaluation on the intended content before it becomes a default.
+
 ## Handoff
 
 - Cache is now **off by default** (upstream policy). Enable it in Options → Translation Cache; selection repair works with or without it.
@@ -126,6 +133,7 @@
 - Real-browser status: llamacpp provider confirmed working in Firefox (options provider switch + model listing + page translation against a local `llama-server`); llama-server now runs as a systemd service (`/etc/conf.d/llama.cpp`, translategemma-12b). XPI rebuild for the llamacpp feature still pending (bump version + `./mkxpi.sh`).
 - For TranslateGemma 4B/12B routing, prefer dedicated llama.cpp model aliases such as `translategemma-4b-translate` and `translategemma-12b-translate` with `c = 4096`, `parallel = 1`, `n-gpu-layers = 99`. The extension auto-routing only looks for 4B/12B TranslateGemma model IDs; keep both tokens in the aliases.
 - Gemma 4 E4B benchmark is documentation-only. If integrating it into the extension as a first-class option, decide its request format/prompt separately; it is not a TranslateGemma model, so the current 4B/12B TranslateGemma fallback logic does not apply automatically.
+- QAT comparison is documented in README: `gemma-4-E4B-it-qat` is substantially faster than Q4_K_M on the short benchmark, but quality has not been accepted as a replacement default. QAT was reloaded after the measurement.
 - Existing unrelated local change remains in `examples/ui-labels-ja.tsv`; do not include it unless the user explicitly wants that file committed.
 - Existing untracked `memo.txt` is unrelated; leave it uncommitted unless the user explicitly asks for it.
 
