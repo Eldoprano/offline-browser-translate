@@ -39,9 +39,34 @@ llama-server \
   --n-gpu-layers 999
 ```
 
-For GPU acceleration, use a CUDA/ROCm/Vulkan-enabled `llama.cpp` build. Recent
-`llama-server` builds allow cross-origin requests by default, so no extra CORS
-configuration is needed.
+For GPU acceleration, use a CUDA/ROCm/Vulkan-enabled `llama.cpp` build.
+
+If the Firefox background console shows a CORS error for
+`http://127.0.0.1:8080/v1/models`, allow the extension origin explicitly:
+
+```sh
+llama-server \
+  -m /path/to/model.gguf \
+  --host 127.0.0.1 \
+  --port 8080 \
+  --n-gpu-layers 999 \
+  --cors-origins "moz-extension://<extension-uuid>"
+```
+
+Find the origin in the background debugger. For a script URL such as
+`moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9/languages.js`, use only
+the origin part:
+
+```sh
+--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"
+```
+
+Avoid `--cors-origins "*"` unless the server is tightly isolated. Also avoid
+mixing `localhost` and the extension origin if Firefox reports that
+`Access-Control-Allow-Origin` does not match; some `llama-server` builds return
+the comma-separated value literally, but browsers require a single matching
+origin in that response header. The built-in `llama-server` Web UI does not
+need CORS for direct browser access to `http://127.0.0.1:8080`.
 
 If both TranslateGemma 4B and 12B are loaded, select the 4B model for normal
 use. The extension keeps short segments on 4B first; when a segment still comes

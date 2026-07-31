@@ -149,3 +149,10 @@
 - After the v1.6.4 merge, model listing failed: upstream's `normalizeServerUrl` rewrites `localhost` → `127.0.0.1`, but `host_permissions` only covered `http://localhost/*`, so rewritten requests lost the extension's CORS exemption (llama-server sends no `Access-Control-Allow-Origin` at all — verified with curl). Fixed by adding `http://127.0.0.1/*` to `host_permissions`.
 - Also verified end-to-end after the merge: model listing via the LMStudio/OpenAI-compatible path against llama-server on :8080, and full page translation (E4B). Note: the URL must be saved in settings first — refresh uses the stored `lmstudioUrl`, not the field value.
 - Upstream has the same bug; submitted as a separate PR.
+
+### llama-server CORS gotcha (2026-07-31)
+
+- Firefox background scripts use a `moz-extension://<uuid>` origin. If `llama-server` does not emit a matching `Access-Control-Allow-Origin`, model detection fails with `NetworkError when attempting to fetch resource`.
+- Safe local fix: keep `--host 127.0.0.1` and pass the extension origin only, e.g. `--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"`. When copying from a script URL like `/languages.js`, strip the path; CORS origin is scheme + host only.
+- `--cors-origins "*"` works but is broader than needed. `--cors-origins "localhost,moz-extension://..."` can fail on this llama.cpp build because the server returns the comma-separated string literally, while Firefox expects a single matching `Access-Control-Allow-Origin` value.
+- Direct use of the built-in `llama-server` Web UI at `http://127.0.0.1:8080` does not require adding `localhost` to CORS.
