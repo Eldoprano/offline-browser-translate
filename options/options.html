@@ -9,28 +9,66 @@
 </head>
 
 <body>
-    <div class="container">
-        <header>
-            <h1>🌐 Local LLM Translator Settings</h1>
-            <p class="subtitle">Configure your privacy-first translation extension</p>
-        </header>
+    <div class="app-layout">
 
-        <main>
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <span class="sidebar-logo">🌐</span>
+                <div>
+                    <div class="sidebar-title">LLM Translator</div>
+                    <div class="sidebar-subtitle">Settings</div>
+                </div>
+            </div>
+            <ul class="nav-list">
+                <li><a href="#section-provider" class="nav-link active" data-section="section-provider">
+                    <span class="nav-icon">🔌</span> Provider
+                </a></li>
+                <li><a href="#section-translation" class="nav-link" data-section="section-translation">
+                    <span class="nav-icon">🌍</span> Translation
+                </a></li>
+                <li><a href="#section-performance" class="nav-link" data-section="section-performance">
+                    <span class="nav-icon">⚡</span> Performance
+                </a></li>
+                <li><a href="#section-output" class="nav-link" data-section="section-output">
+                    <span class="nav-icon">📤</span> Output
+                </a></li>
+                <li><a href="#section-cache" class="nav-link" data-section="section-cache">
+                    <span class="nav-icon">💾</span> Cache
+                </a></li>
+                <li><a href="#section-glossary" class="nav-link" data-section="section-glossary">
+                    <span class="nav-icon">📖</span> Glossary
+                </a></li>
+                <li><a href="#section-advanced" class="nav-link" data-section="section-advanced">
+                    <span class="nav-icon">🧪</span> Advanced
+                </a></li>
+            </ul>
+            <div class="sidebar-footer">
+                <p class="privacy-note">🔒 Your data never leaves your machine</p>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <main class="content">
+
             <!-- Provider Settings -->
-            <section class="settings-section">
-                <h2>🔌 Provider Configuration</h2>
-
-                <div class="form-group">
-                    <label for="providerSelect">Provider</label>
-                    <select id="providerSelect">
-                        <option value="auto">Auto-detect</option>
-                        <option value="ollama">Ollama</option>
-                        <option value="lmstudio">LM Studio / OpenAI-compatible</option>
-                    </select>
-                    <p class="hint">Auto-detect will try both providers and use whichever responds first.</p>
+            <section class="settings-section" id="section-provider">
+                <div class="section-header">
+                    <h2>🔌 Provider Configuration</h2>
+                    <p class="section-description">Select and configure your local LLM backend.</p>
                 </div>
 
-                <div class="form-row">
+                <div class="form-grid">
+                    <div class="form-group span-full">
+                        <label for="providerSelect">Provider</label>
+                        <select id="providerSelect">
+                            <option value="auto">Auto-detect</option>
+                            <option value="ollama">Ollama</option>
+                            <option value="lmstudio">LM Studio / OpenAI-compatible</option>
+                        </select>
+                        <p class="hint">Auto-detect will try both providers and use whichever responds first.</p>
+                    </div>
+
                     <div class="form-group">
                         <label for="ollamaUrl">Ollama URL</label>
                         <input type="text" id="ollamaUrl" placeholder="http://localhost:11434">
@@ -39,82 +77,89 @@
                     <div class="form-group">
                         <label for="lmstudioUrl">LM Studio / OpenAI-compatible URL</label>
                         <input type="text" id="lmstudioUrl" placeholder="http://localhost:1234">
-                        <p class="hint">Also works with llama.cpp (llama-server), vLLM, and any other OpenAI-compatible server — enter its base URL here.</p>
+                        <p class="hint">Also works with llama.cpp, vLLM, and any OpenAI-compatible server — enter its base URL here.</p>
                     </div>
-                </div>
 
-                <div class="form-group">
-                    <label for="modelSelect">Preferred Model</label>
-                    <div class="select-with-btn">
-                        <select id="modelSelect">
-                            <option value="">Loading models...</option>
-                        </select>
-                        <button id="refreshModels" class="icon-btn" title="Refresh models">🔄</button>
+                    <div class="form-group span-full">
+                        <label for="modelSelect">Preferred Model</label>
+                        <div class="select-with-btn">
+                            <select id="modelSelect">
+                                <option value="">Loading models...</option>
+                            </select>
+                            <button id="refreshModels" class="icon-btn" title="Refresh models">🔄</button>
+                        </div>
+                        <p class="hint">Select the model to use for translations.</p>
                     </div>
-                    <p class="hint">Select the model to use for translations.</p>
                 </div>
             </section>
 
             <!-- Translation Settings -->
-            <section class="settings-section">
-                <h2>🌍 Translation Settings</h2>
-
-                <div class="form-group">
-                    <label for="targetLanguage">Target Language</label>
-                    <select id="targetLanguage">
-                        <!-- Populated dynamically -->
-                    </select>
+            <section class="settings-section" id="section-translation">
+                <div class="section-header">
+                    <h2>🌍 Translation Settings</h2>
+                    <p class="section-description">Configure language and prompt behaviour.</p>
                 </div>
 
-                <div class="form-group" id="sourceLanguageGroup" hidden>
-                    <label for="sourceLanguage">Source Language (for TranslateGemma)</label>
-                    <select id="sourceLanguage">
-                        <option value="auto">Auto-detect from page</option>
-                        <!-- Populated dynamically -->
-                    </select>
-                    <p class="hint">TranslateGemma requires explicit source language. Auto-detect reads from page's lang
-                        attribute.</p>
-                </div>
-
-                <div class="form-group">
-                    <label for="requestFormat">Request Format</label>
-                    <select id="requestFormat">
-                        <option value="auto">Auto (detect from model)</option>
-                        <option value="default">Default (JSON output)</option>
-                        <option value="translategemma">TranslateGemma</option>
-                        <option value="hunyuan">Hunyuan-MT</option>
-                        <option value="simple">Simple (Line-by-line)</option>
-                        <option value="custom">Custom</option>
-                    </select>
-                    <p id="formatDescription" class="hint format-description"></p>
-                </div>
-
-                <!-- Prompt Editor -->
-                <div class="form-group prompt-editor" id="promptEditor">
-                    <label>Prompt Template <span class="hint">(editable)</span></label>
-                    <div class="variables-hint">
-                        Variables: <code>{{targetLanguage}}</code> <code>{{targetCode}}</code>
-                        <code>{{sourceLang}}</code> <code>{{sourceCode}}</code> <code>{{texts}}</code>
-                    </div>
-                    <label for="systemPrompt" class="sub-label">System Prompt:</label>
-                    <div class="editor-container">
-                        <div class="editor-backdrop" id="systemPromptBackdrop"></div>
-                        <textarea id="systemPrompt" rows="4" placeholder="System prompt..."></textarea>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="targetLanguage">Target Language</label>
+                        <select id="targetLanguage">
+                            <!-- Populated dynamically -->
+                        </select>
                     </div>
 
-                    <label for="userPrompt" class="sub-label">User Prompt:</label>
-                    <div class="editor-container">
-                        <div class="editor-backdrop" id="userPromptBackdrop"></div>
-                        <textarea id="userPrompt" rows="4" placeholder="User prompt template..."></textarea>
+                    <div class="form-group" id="sourceLanguageGroup" hidden>
+                        <label for="sourceLanguage">Source Language <span class="hint-inline">(TranslateGemma only)</span></label>
+                        <select id="sourceLanguage">
+                            <option value="auto">Auto-detect from page</option>
+                            <!-- Populated dynamically -->
+                        </select>
+                        <p class="hint">TranslateGemma requires an explicit source language. Auto-detect reads the page's lang attribute.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="requestFormat">Request Format</label>
+                        <select id="requestFormat">
+                            <option value="auto">Auto (detect from model)</option>
+                            <option value="default">Default (JSON output)</option>
+                            <option value="translategemma">TranslateGemma</option>
+                            <option value="hunyuan">Hunyuan-MT</option>
+                            <option value="simple">Simple (Line-by-line)</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                        <p id="formatDescription" class="hint format-description"></p>
+                    </div>
+
+                    <!-- Prompt Editor -->
+                    <div class="form-group span-full prompt-editor" id="promptEditor">
+                        <label>Prompt Template <span class="hint-inline">(editable)</span></label>
+                        <div class="variables-hint">
+                            Variables: <code>{{targetLanguage}}</code> <code>{{targetCode}}</code>
+                            <code>{{sourceLang}}</code> <code>{{sourceCode}}</code> <code>{{texts}}</code>
+                        </div>
+                        <label for="systemPrompt" class="sub-label">System Prompt:</label>
+                        <div class="editor-container">
+                            <div class="editor-backdrop" id="systemPromptBackdrop"></div>
+                            <textarea id="systemPrompt" rows="4" placeholder="System prompt..."></textarea>
+                        </div>
+
+                        <label for="userPrompt" class="sub-label">User Prompt:</label>
+                        <div class="editor-container">
+                            <div class="editor-backdrop" id="userPromptBackdrop"></div>
+                            <textarea id="userPrompt" rows="4" placeholder="User prompt template..."></textarea>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- Performance Settings -->
-            <section class="settings-section">
-                <h2>⚡ Performance</h2>
+            <section class="settings-section" id="section-performance">
+                <div class="section-header">
+                    <h2>⚡ Performance</h2>
+                    <p class="section-description">Tune batch size and concurrency for your hardware.</p>
+                </div>
 
-                <div class="form-row">
+                <div class="form-grid">
                     <div class="form-group">
                         <label for="maxTokens">Max Tokens per Batch</label>
                         <input type="number" id="maxTokens" min="100" max="8000" step="100">
@@ -126,137 +171,213 @@
                         <input type="number" id="maxItems" min="1" max="50" step="1">
                         <p class="hint">Lower values = faster visual feedback as translations appear.</p>
                     </div>
-                </div>
 
-                <div class="form-group">
-                    <label for="temperature">Temperature: <span id="temperatureValue">0.3</span></label>
-                    <input type="range" id="temperature" min="0" max="1" step="0.1">
-                    <p class="hint">Lower = more consistent translations. Higher = more creative.</p>
-                </div>
+                    <div class="form-group">
+                        <label for="temperature">Temperature: <span id="temperatureValue">0.3</span></label>
+                        <input type="range" id="temperature" min="0" max="1" step="0.1">
+                        <p class="hint">Lower = more consistent translations. Higher = more creative.</p>
+                    </div>
 
-                <div class="form-group">
-                    <label for="maxConcurrent">Parallel Requests: <span id="maxConcurrentValue">4</span></label>
-                    <input type="range" id="maxConcurrent" min="1" max="4" step="1" value="4">
-                    <p class="hint">LMStudio 0.4.0+ supports up to 4 parallel requests for faster translation.</p>
+                    <div class="form-group">
+                        <label for="maxConcurrent">Parallel Requests: <span id="maxConcurrentValue">4</span></label>
+                        <input type="range" id="maxConcurrent" min="1" max="4" step="1" value="4">
+                        <p class="hint">LMStudio 0.4.0+ supports up to 4 parallel requests for faster translation.</p>
+                    </div>
                 </div>
             </section>
 
             <!-- Output Settings -->
-            <section class="settings-section">
-                <h2>📤 Output Settings</h2>
-
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="useStructuredOutput" checked>
-                    <label for="useStructuredOutput">Use structured JSON output</label>
-                    <p class="hint">Requests JSON format from the model. Disable if model struggles with JSON.</p>
+            <section class="settings-section" id="section-output">
+                <div class="section-header">
+                    <h2>📤 Output Settings</h2>
+                    <p class="section-description">Control how translations are displayed and how models respond.</p>
                 </div>
 
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="plainTextFallback" checked>
-                    <label for="plainTextFallback">Fall back to plain-text translation</label>
-                    <p class="hint">If a segment keeps coming back malformed, translate it on its own as plain text (no JSON). Slower, but avoids leaving text untranslated or breaking the page.</p>
-                </div>
+                <div class="toggles-grid">
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Structured JSON output</div>
+                                <div class="toggle-card-desc">Requests JSON format from the model. Disable if the model struggles with JSON.</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="useStructuredOutput" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
 
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="showGlow" checked>
-                    <label for="showGlow">Show translation glow effect</label>
-                    <p class="hint">Visual indicator when text has been translated.</p>
-                </div>
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Plain-text fallback</div>
+                                <div class="toggle-card-desc">If a segment keeps coming back malformed, retranslate it as plain text. Slower, but avoids leaving text untranslated.</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="plainTextFallback" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
 
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="debugLogging">
-                    <label for="debugLogging">Enable debug logging</label>
-                    <p class="hint">Verbose logs for troubleshooting. View in about:debugging → Inspect → Console.</p>
-                </div>
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Translation glow effect</div>
+                                <div class="toggle-card-desc">Visual indicator when text has been translated on the page.</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="showGlow">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
 
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Debug logging</div>
+                                <div class="toggle-card-desc">Verbose logs for troubleshooting. View in about:debugging → Inspect → Console.</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="debugLogging">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- Translation Cache -->
-            <section class="settings-section">
-                <h2>💾 Translation Cache</h2>
-
-                <div class="form-group">
-                    <label for="cacheMode">Cache translations</label>
-                    <select id="cacheMode">
-                        <option value="off">Don't cache</option>
-                        <option value="session">Until I close the browser</option>
-                        <option value="persistent">Keep across sessions</option>
-                    </select>
-                    <p class="hint" id="cacheBackendWarning" hidden style="color: var(--yellow, #dbbc7f);">⚠️ This browser doesn't support keeping the cache across sessions.</p>
-                    <p class="hint">Reuse stored translations for identical text so repeated content (menus, usernames, boilerplate) isn't re-translated. Stored locally, never uploaded. <strong>Until I close the browser</strong> clears it on the next start; <strong>Keep across sessions</strong> keeps it until you clear it.</p>
+            <section class="settings-section" id="section-cache">
+                <div class="section-header">
+                    <h2>💾 Translation Cache</h2>
+                    <p class="section-description">Reuse stored translations for identical text so repeated content isn't re-translated. Stored locally, never uploaded.</p>
                 </div>
 
-                <div class="form-group">
-                    <button id="clearCache" class="secondary-btn">🗑️ Clear cache (<span id="cacheCount">…</span> entries)</button>
-                </div>
-            </section>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="cacheMode">Cache translations</label>
+                        <select id="cacheMode">
+                            <option value="off">Don't cache</option>
+                            <option value="session">Until I close the browser</option>
+                            <option value="persistent">Keep across sessions</option>
+                        </select>
+                        <p class="hint" id="cacheBackendWarning" hidden style="color: var(--yellow, #dbbc7f);">⚠️ This browser doesn't support keeping the cache across sessions.</p>
+                    </div>
 
-            <!-- Advanced Features -->
-            <section class="settings-section">
-                <h2>🧪 Advanced Features</h2>
-
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="floatingButton">
-                    <label for="floatingButton">Show floating translate button on text selection</label>
-                    <p class="hint">A small button appears next to selected text so you can translate it without right-clicking. Enabling this will ask for permission to run on all websites.</p>
+                    <div class="form-group cache-actions">
+                        <label>Cache management</label>
+                        <button id="clearCache" class="secondary-btn">🗑️ Clear cache (<span id="cacheCount">…</span> entries)</button>
+                    </div>
                 </div>
             </section>
 
             <!-- Glossary -->
-            <section class="settings-section">
-                <h2>📖 Glossary</h2>
-                <p class="section-description">Force consistent translations for proper nouns. Only terms that appear in the text being translated are sent to the model, so a large dictionary is fine.</p>
-
-                <div class="form-group checkbox-group">
-                    <input type="checkbox" id="useGlossary" checked>
-                    <label for="useGlossary">Use glossary</label>
-                    <p class="hint">Inject matching terms into the prompt. Uncheck to disable without deleting the loaded dictionary.</p>
+            <section class="settings-section" id="section-glossary">
+                <div class="section-header">
+                    <h2>📖 Glossary</h2>
+                    <p class="section-description">
+                        Force consistent translations for specific terms. Whole-segment matches bypass the model entirely;
+                        partial matches are injected as prompt hints so the model stays consistent. Only matching terms
+                        are sent per request — a large dictionary is fine.
+                    </p>
                 </div>
 
-                <div class="form-group">
-                    <label for="glossaryFile">Load glossary file (TSV)</label>
-                    <input type="file" id="glossaryFile" accept=".tsv,.txt,text/plain">
-                    <p class="hint">One entry per line: <code>source&lt;TAB&gt;translation</code>. Omit the second column to keep a term as-is (do not translate). Lines starting with <code>#</code> and blank lines are ignored. Add a <code>#target: ja</code> line to declare the language the glossary translates into — it is then only applied when that target language is selected. Loading replaces the current dictionary and clears the translation cache.</p>
-                    <p class="hint" id="glossaryStatus">No glossary loaded.</p>
-                    <details id="glossaryPreview" class="glossary-preview" hidden>
-                        <summary>Show loaded terms</summary>
-                        <div id="glossaryTerms" class="glossary-terms"></div>
-                    </details>
-                    <button id="clearGlossary" class="secondary-btn">🗑️ Clear glossary</button>
+                <div class="glossary-top-bar">
+                    <div class="toggle-row">
+                        <label class="switch">
+                            <input type="checkbox" id="useGlossary" checked>
+                            <span class="slider"></span>
+                        </label>
+                        <span class="toggle-label">Enable glossary</span>
+                        <span id="glossaryStatusBadge" class="glossary-badge"></span>
+                    </div>
+
+                    <div class="glossary-actions">
+                        <label class="secondary-btn btn-sm" for="glossaryImportFile" title="Import from TSV file">
+                            ⬆️ Import TSV
+                        </label>
+                        <input type="file" id="glossaryImportFile" accept=".tsv,.txt,text/plain" style="display:none">
+                        <button id="glossaryExportBtn" class="secondary-btn btn-sm" title="Export as TSV file">⬇️ Export TSV</button>
+                        <button id="clearGlossary" class="danger-btn btn-sm">🗑️ Clear all</button>
+                    </div>
                 </div>
+
+                <div class="form-grid" style="margin-bottom: 14px;">
+                    <div class="form-group">
+                        <label for="glossaryTargetLang">Target language <span class="hint-inline">(glossary only applies when translating to this language)</span></label>
+                        <select id="glossaryTargetLang">
+                            <option value="">Any language (always apply)</option>
+                            <!-- Populated dynamically from LANGUAGES -->
+                        </select>
+                    </div>
+                    <div class="form-group" id="glossaryTargetInfo" hidden>
+                        <!-- kept for JS compat, now superseded by the dropdown -->
+                    </div>
+                </div>
+
+                <!-- Inline term editor -->
+                <div class="glossary-editor" id="glossaryEditor">
+                    <div class="glossary-filter-bar">
+                        <input type="search" id="glossaryFilter" class="glossary-input"
+                            placeholder="🔍 Filter terms…" autocomplete="off">
+                    </div>
+                    <div class="glossary-table-header">
+                        <span>Source term</span>
+                        <span>Translation <span class="hint-inline">(leave empty to keep as-is)</span></span>
+                        <span></span>
+                    </div>
+                    <div class="glossary-rows" id="glossaryRows">
+                        <!-- Rows injected by JS -->
+                    </div>
+                    <div class="glossary-add-row">
+                        <input type="text" id="newTermSource" placeholder="Add new term…" class="glossary-input">
+                        <input type="text" id="newTermTarget" placeholder="Translation…" class="glossary-input">
+                        <button id="addGlossaryTerm" class="icon-btn" title="Add term">＋</button>
+                    </div>
+                </div>
+
+                <p class="hint glossary-rows-note" id="glossaryRowsNote"></p>
+
+                <div class="glossary-save-bar">
+                    <span class="glossary-unsaved-hint" id="glossaryUnsavedHint" hidden>● Unsaved changes</span>
+                    <button id="saveGlossary" class="primary-btn btn-sm">💾 Save glossary</button>
+                </div>
+
+                <p class="hint" style="margin-top: 0.75rem;">
+                    <strong>TSV format for import:</strong> one line per term, <code>source&lt;TAB&gt;translation</code>.
+                    Add a <code>#target: ja</code> line to limit the glossary to a specific target language.
+                </p>
             </section>
 
-            <!-- Custom Prompts -->
-            <section class="settings-section" id="customPromptsSection" hidden>
-                <h2>✏️ Custom Prompts</h2>
-                <p class="section-description">Customize the prompts sent to the model. Available variables:</p>
-                <div class="variables-list">
-                    <code>{{targetLanguage}}</code>
-                    <code>{{texts}}</code>
-                    <code>{{sourceLang}}</code>
-                    <code>{{sourceCode}}</code>
-                    <code>{{targetLang}}</code>
-                    <code>{{targetCode}}</code>
+            <!-- Advanced Features -->
+            <section class="settings-section" id="section-advanced">
+                <div class="section-header">
+                    <h2>🧪 Advanced Features</h2>
                 </div>
 
-                <div class="form-group">
-                    <label for="customSystem">System Prompt</label>
-                    <textarea id="customSystem" rows="4"
-                        placeholder="Custom system prompt (leave empty for no system prompt)"></textarea>
+                <div class="toggles-grid">
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Floating translate button</div>
+                                <div class="toggle-card-desc">A small button appears next to selected text so you can translate it without right-clicking. Enabling this will ask for permission to run on all websites.</div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="floatingButton">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="customUser">User Prompt Template</label>
-                    <textarea id="customUser" rows="6" placeholder="Custom user prompt template"></textarea>
-                </div>
-            </section>
-
-            <!-- LM Studio TranslateGemma Help -->
-            <section class="settings-section info-section" id="translateGemmaHelp" hidden>
-                <h2>ℹ️ TranslateGemma + LM Studio</h2>
-                <p>LM Studio may need a custom chat template for TranslateGemma to work correctly. Go to your model's
-                    settings in LM Studio and set the chat template to:</p>
-                <pre id="lmstudioTemplate">{{ bos_token }}
+                <!-- LM Studio TranslateGemma Help -->
+                <div class="info-box" id="translateGemmaHelp" hidden>
+                    <h3>ℹ️ TranslateGemma + LM Studio</h3>
+                    <p>LM Studio may need a custom chat template for TranslateGemma to work correctly. Go to your model's
+                        settings in LM Studio and set the chat template to:</p>
+                    <pre id="lmstudioTemplate">{{ bos_token }}
 {%- for message in messages -%}
     {%- if message['role'] == 'user' or message['role'] == 'system' -%}
         {{ '&lt;start_of_turn&gt;user\n' + message['content'] | trim + '&lt;end_of_turn&gt;\n' }}
@@ -267,17 +388,45 @@
 {%- if add_generation_prompt -%}
     {{ '&lt;start_of_turn&gt;model\n' }}
 {%- endif -%}</pre>
-                <button id="copyTemplate" class="secondary-btn">📋 Copy Template</button>
+                    <button id="copyTemplate" class="secondary-btn btn-sm">📋 Copy Template</button>
+                </div>
             </section>
-        </main>
 
-        <footer>
-            <div class="button-row">
+            <!-- Custom Prompts (shown when format = custom) -->
+            <section class="settings-section" id="customPromptsSection" hidden>
+                <div class="section-header">
+                    <h2>✏️ Custom Prompts</h2>
+                    <p class="section-description">Customize the prompts sent to the model.</p>
+                </div>
+                <div class="variables-list">
+                    <code>{{targetLanguage}}</code>
+                    <code>{{texts}}</code>
+                    <code>{{sourceLang}}</code>
+                    <code>{{sourceCode}}</code>
+                    <code>{{targetLang}}</code>
+                    <code>{{targetCode}}</code>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group span-full">
+                        <label for="customSystem">System Prompt</label>
+                        <textarea id="customSystem" rows="4"
+                            placeholder="Custom system prompt (leave empty for no system prompt)"></textarea>
+                    </div>
+
+                    <div class="form-group span-full">
+                        <label for="customUser">User Prompt Template</label>
+                        <textarea id="customUser" rows="6" placeholder="Custom user prompt template"></textarea>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Footer actions -->
+            <div class="content-footer">
                 <button id="saveSettings" class="primary-btn">💾 Save Settings</button>
                 <button id="resetSettings" class="danger-btn">🔄 Reset to Defaults</button>
             </div>
-            <p class="privacy-note">🔒 All translations stay on your device. No data is sent to external servers.</p>
-        </footer>
+
+        </main>
     </div>
 
     <div id="toast" class="toast">

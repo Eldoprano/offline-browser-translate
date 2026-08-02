@@ -1229,6 +1229,25 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     break;
                 }
 
+                case 'GET_GLOSSARY_ENTRIES': {
+                    // Full dictionary, for the inline editor. GET_GLOSSARY_INFO's
+                    // preview is truncated and must never be used as the editor's
+                    // working copy — saving it back would drop every term past
+                    // GLOSSARY_PREVIEW_MAX.
+                    const entries = await loadGlossary();
+                    let meta = null;
+                    try {
+                        const result = await browserAPI.storage.local.get(GLOSSARY_META_KEY);
+                        meta = result[GLOSSARY_META_KEY] || null;
+                    } catch (e) { /* meta is cosmetic */ }
+                    sendResponse({
+                        entries,
+                        name: meta && meta.name || '',
+                        target: meta && meta.target || ''
+                    });
+                    break;
+                }
+
                 case 'CLEAR_GLOSSARY':
                     await browserAPI.storage.local.remove([GLOSSARY_KEY, GLOSSARY_META_KEY]);
                     invalidateGlossary();

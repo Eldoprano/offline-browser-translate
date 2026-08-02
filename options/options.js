@@ -99,11 +99,21 @@ const elements = {
     cacheCount: document.getElementById('cacheCount'),
     debugLogging: document.getElementById('debugLogging'),
     useGlossary: document.getElementById('useGlossary'),
-    glossaryFile: document.getElementById('glossaryFile'),
-    glossaryStatus: document.getElementById('glossaryStatus'),
-    glossaryPreview: document.getElementById('glossaryPreview'),
-    glossaryTerms: document.getElementById('glossaryTerms'),
+    // new glossary UI elements
+    glossaryTargetLang: document.getElementById('glossaryTargetLang'),
+    glossaryRows: document.getElementById('glossaryRows'),
+    glossaryFilter: document.getElementById('glossaryFilter'),
+    glossaryRowsNote: document.getElementById('glossaryRowsNote'),
+    glossaryStatusBadge: document.getElementById('glossaryStatusBadge'),
+    glossaryTargetInfo: document.getElementById('glossaryTargetInfo'),
+    glossaryUnsavedHint: document.getElementById('glossaryUnsavedHint'),
+    newTermSource: document.getElementById('newTermSource'),
+    newTermTarget: document.getElementById('newTermTarget'),
+    addGlossaryTerm: document.getElementById('addGlossaryTerm'),
+    saveGlossary: document.getElementById('saveGlossary'),
     clearGlossary: document.getElementById('clearGlossary'),
+    glossaryImportFile: document.getElementById('glossaryImportFile'),
+    glossaryExportBtn: document.getElementById('glossaryExportBtn'),
     floatingButton: document.getElementById('floatingButton'),
     customPromptsSection: document.getElementById('customPromptsSection'),
     customSystem: document.getElementById('customSystem'),
@@ -181,7 +191,8 @@ async function init() {
     initPromptEditors(); // Initialize editors
     await loadModels();
     setupEventListeners();
-    refreshGlossaryStatus();
+    await refreshGlossaryStatus();
+    initSidebarScrollspy();
     refreshCacheCount();
     refreshCacheBackend();
 
@@ -283,6 +294,17 @@ function populateLanguageDropdowns() {
         option.value = code;
         option.textContent = name;
         elements.targetLanguage.appendChild(option);
+    }
+
+    // Glossary target language dropdown
+    if (elements.glossaryTargetLang) {
+        // Keep the first "Any language" option already in the HTML
+        for (const [code, name] of sortedLangs) {
+            const option = document.createElement('option');
+            option.value = code;
+            option.textContent = name;
+            elements.glossaryTargetLang.appendChild(option);
+        }
     }
 }
 
@@ -446,59 +468,159 @@ function parseGlossaryTSV(text) {
     return { entries: [...bySource.entries()], target };
 }
 
-// Refresh the glossary status line (count, file name, load time) and the
-// expandable preview of loaded terms.
+// ============================================================================
+// Inline glossary editor state
+// ============================================================================
+
+// Working copy of the *entire* glossary. Saving writes this array back verbatim,
+// so it must always hold every stored term — never a truncated preview.
+// Each item: { source: string, target: string }
+let glossaryEditorRows = [];
+let glossaryEditorDirty = false;
+let glossaryEditorTargetLang = ''; // from loaded TSV / storage meta
+// False until the full dictionary has been read back from the background. Saving
+// while false would overwrite the stored glossary with an incomplete list.
+let glossaryEditorLoaded = false;
+
+// Rows are edited in memory but only this many are put in the DOM at once —
+// a 20k-term dictionary would otherwise mean 60k input elements. The filter box
+// is how users reach terms past the cap.
+const GLOSSARY_RENDER_MAX = 300;
+
+function markGlossaryDirty() {
+    glossaryEditorDirty = true;
+    if (elements.glossaryUnsavedHint) elements.glossaryUnsavedHint.hidden = false;
+}
+
+function markGlossaryClean() {
+    glossaryEditorDirty = false;
+    if (elements.glossaryUnsavedHint) elements.glossaryUnsavedHint.hidden = true;
+}
+
+// Render glossaryEditorRows into the DOM table, honouring the filter box and
+// the render cap. Handlers close over the row's index in the *full* array, so
+// editing a filtered view still writes to the right entry.
+function renderGlossaryRows() {
+    const container = elements.glossaryRows;
+    if (!container) return;
+
+    const query = (elements.glossaryFilter ? elements.glossaryFilter.value : '').trim().toLowerCase();
+    const matches = [];
+    for (let idx = 0; idx < glossaryEditorRows.length; idx++) {
+        const entry = glossaryEditorRows[idx];
+        if (!query
+            || entry.source.toLowerCase().includes(query)
+            || entry.target.toLowerCase().includes(query)) {
+            matches.push(idx);
+        }
+    }
+
+    const shown = matches.slice(0, GLOSSARY_RENDER_MAX);
+    container.replaceChildren();
+    for (const idx of shown) {
+        const entry = glossaryEditorRows[idx];
+        const row = document.createElement('div');
+        row.className = 'glossary-row';
+
+        const srcInput = document.createElement('input');
+        srcInput.type = 'text';
+        srcInput.value = entry.source;
+        srcInput.placeholder = 'Source term';
+        srcInput.addEventListener('input', () => {
+            glossaryEditorRows[idx].source = srcInput.value;
+            markGlossaryDirty();
+        });
+
+        const tgtInput = document.createElement('input');
+        tgtInput.type = 'text';
+        tgtInput.value = entry.target;
+        tgtInput.placeholder = '(keep as-is)';
+        tgtInput.addEventListener('input', () => {
+            glossaryEditorRows[idx].target = tgtInput.value;
+            markGlossaryDirty();
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'glossary-row-delete';
+        delBtn.textContent = '×';
+        delBtn.title = 'Remove term';
+        delBtn.addEventListener('click', () => {
+            glossaryEditorRows.splice(idx, 1);
+            markGlossaryDirty();
+            renderGlossaryRows();
+        });
+
+        row.append(srcInput, tgtInput, delBtn);
+        container.appendChild(row);
+    }
+
+    updateGlossaryRowsNote(matches.length, shown.length, !!query);
+}
+
+// Line under the table explaining what the visible rows represent, so a capped
+// or filtered view is never mistaken for the whole dictionary.
+function updateGlossaryRowsNote(matchCount, shownCount, filtered) {
+    const note = elements.glossaryRowsNote;
+    if (!note) return;
+    const total = glossaryEditorRows.length;
+
+    if (!total) {
+        note.textContent = 'No terms yet — add one below or import a TSV.';
+    } else if (filtered && shownCount < matchCount) {
+        note.textContent = `Showing ${shownCount} of ${matchCount.toLocaleString()} matches (${total.toLocaleString()} terms total). Narrow the filter to see the rest.`;
+    } else if (filtered) {
+        note.textContent = `${matchCount.toLocaleString()} of ${total.toLocaleString()} terms match.`;
+    } else if (shownCount < total) {
+        note.textContent = `Showing the first ${shownCount} of ${total.toLocaleString()} terms. Use the filter to reach the others — all ${total.toLocaleString()} are kept when you save.`;
+    } else {
+        note.textContent = `${total.toLocaleString()} term${total === 1 ? '' : 's'}.`;
+    }
+    note.hidden = false;
+}
+
+// Update the badge showing term count above the table.
+function updateGlossaryBadge(count) {
+    if (!elements.glossaryStatusBadge) return;
+    if (!count) {
+        elements.glossaryStatusBadge.textContent = '0 terms';
+        elements.glossaryStatusBadge.className = 'glossary-badge';
+    } else {
+        elements.glossaryStatusBadge.textContent = `${count.toLocaleString()} term${count === 1 ? '' : 's'}`;
+        elements.glossaryStatusBadge.className = 'glossary-badge loaded';
+    }
+}
+
+// Load the full glossary from the background service and populate the editor.
 async function refreshGlossaryStatus() {
-    if (!elements.glossaryStatus) return;
     let res = null;
     try {
-        res = await browserAPI.runtime.sendMessage({ type: 'GET_GLOSSARY_INFO' });
-    } catch (e) { /* fall through to the empty state */ }
-    const count = res && res.count ? res.count : 0;
+        res = await browserAPI.runtime.sendMessage({ type: 'GET_GLOSSARY_ENTRIES' });
+    } catch (e) { /* background not ready */ }
 
-    if (!count) {
-        elements.glossaryStatus.textContent = 'No glossary loaded.';
-        elements.glossaryStatus.classList.remove('glossary-status-loaded');
-        if (elements.glossaryPreview) elements.glossaryPreview.hidden = true;
+    if (!res || !Array.isArray(res.entries)) {
+        // Couldn't read the dictionary. Leave the editor empty but locked, so a
+        // stray Save can't wipe terms we simply failed to load.
+        glossaryEditorLoaded = false;
+        glossaryEditorRows = [];
+        renderGlossaryRows();
+        updateGlossaryBadge(0);
+        if (elements.glossaryRowsNote) {
+            elements.glossaryRowsNote.textContent = 'Could not load the glossary — reload this page to try again.';
+        }
+        markGlossaryClean();
         return;
     }
 
-    let status = `✅ ${count.toLocaleString()} term${count === 1 ? '' : 's'} loaded`;
-    if (res.name) status += ` from ${res.name}`;
-    if (res.target) {
-        const langName = (typeof LANGUAGES !== 'undefined' && LANGUAGES[res.target]) || res.target;
-        status += `, applied when translating to ${langName}`;
+    glossaryEditorLoaded = true;
+    glossaryEditorTargetLang = res.target || '';
+    glossaryEditorRows = res.entries.map(([source, target]) => ({ source, target: target || '' }));
+    renderGlossaryRows();
+    updateGlossaryBadge(glossaryEditorRows.length);
+    // Sync the target language dropdown
+    if (elements.glossaryTargetLang) {
+        elements.glossaryTargetLang.value = glossaryEditorTargetLang || '';
     }
-    if (res.loadedAt) status += ` (${new Date(res.loadedAt).toLocaleString()})`;
-    elements.glossaryStatus.textContent = status + '.';
-    elements.glossaryStatus.classList.add('glossary-status-loaded');
-
-    // Preview list. Built with textContent so TSV content is never parsed as HTML.
-    if (!elements.glossaryPreview || !elements.glossaryTerms) return;
-    const preview = Array.isArray(res.preview) ? res.preview : [];
-    elements.glossaryTerms.replaceChildren();
-    for (const entry of preview) {
-        const src = entry && entry[0];
-        if (!src) continue;
-        const tgt = entry[1];
-        const row = document.createElement('div');
-        row.className = 'glossary-term-row';
-        const from = document.createElement('span');
-        from.className = 'glossary-term-source';
-        from.textContent = src;
-        const to = document.createElement('span');
-        to.className = 'glossary-term-target';
-        to.textContent = (tgt === undefined || tgt === '') ? '(kept as-is)' : tgt;
-        row.append(from, ' → ', to);
-        elements.glossaryTerms.appendChild(row);
-    }
-    if (count > preview.length) {
-        const more = document.createElement('div');
-        more.className = 'glossary-term-row glossary-term-more';
-        more.textContent = `… and ${(count - preview.length).toLocaleString()} more`;
-        elements.glossaryTerms.appendChild(more);
-    }
-    elements.glossaryPreview.hidden = false;
+    markGlossaryClean();
 }
 
 // Show toast notification
@@ -596,11 +718,102 @@ function setupEventListeners() {
         });
     }
 
-    // Glossary: load from a TSV file
-    if (elements.glossaryFile) {
-        elements.glossaryFile.addEventListener('change', async (e) => {
+    // Glossary: filter the visible rows
+    if (elements.glossaryFilter) {
+        elements.glossaryFilter.addEventListener('input', renderGlossaryRows);
+    }
+
+    // Glossary: add a new row via the bottom input bar
+    if (elements.addGlossaryTerm) {
+        const doAdd = () => {
+            const src = elements.newTermSource.value.trim();
+            if (!src) return;
+            const tgt = elements.newTermTarget.value.trim();
+            // Prevent duplicate sources
+            const existing = glossaryEditorRows.findIndex(r => r.source === src);
+            if (existing !== -1) {
+                glossaryEditorRows[existing].target = tgt;
+            } else {
+                glossaryEditorRows.push({ source: src, target: tgt });
+            }
+            elements.newTermSource.value = '';
+            elements.newTermTarget.value = '';
+            elements.newTermSource.focus();
+            markGlossaryDirty();
+
+            // A filtered or capped view may not include the row we just added.
+            // Filter down to it so the user can see what happened.
+            const filterActive = elements.glossaryFilter && elements.glossaryFilter.value.trim();
+            if (filterActive || glossaryEditorRows.length > GLOSSARY_RENDER_MAX) {
+                if (elements.glossaryFilter) elements.glossaryFilter.value = src;
+            }
+            renderGlossaryRows();
+            // Scroll to bottom of the rows container
+            if (elements.glossaryRows) elements.glossaryRows.scrollTop = elements.glossaryRows.scrollHeight;
+        };
+        elements.addGlossaryTerm.addEventListener('click', doAdd);
+        // Allow pressing Enter in either input to add
+        [elements.newTermSource, elements.newTermTarget].forEach(input => {
+            if (input) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+        });
+    }
+
+    // Glossary: save the inline editor contents to storage
+    if (elements.saveGlossary) {
+        elements.saveGlossary.addEventListener('click', async () => {
+            if (!glossaryEditorLoaded) {
+                showToast('Glossary not loaded — reload the page before saving', 'error');
+                return;
+            }
+            const entries = glossaryEditorRows
+                .filter(r => r.source.trim())
+                .map(r => [r.source.trim(), r.target.trim()]);
+            // Dedupe: last occurrence of a source wins
+            const bySource = new Map(entries);
+            const deduped = [...bySource.entries()];
+            // Read target language from the dropdown
+            const targetLang = elements.glossaryTargetLang ? elements.glossaryTargetLang.value : glossaryEditorTargetLang;
+            const res = await browserAPI.runtime.sendMessage({
+                type: 'SAVE_GLOSSARY',
+                entries: deduped,
+                target: targetLang,
+                name: 'inline editor'
+            });
+            if (res && res.ok) {
+                glossaryEditorTargetLang = targetLang;
+                await refreshGlossaryStatus();
+                showToast(`Glossary saved: ${res.count} terms`);
+            } else {
+                showToast('Failed to save glossary', 'error');
+            }
+        });
+    }
+
+    // Glossary: clear all
+    if (elements.clearGlossary) {
+        elements.clearGlossary.addEventListener('click', async () => {
+            if (!confirm('Clear all glossary terms?')) return;
+            const res = await browserAPI.runtime.sendMessage({ type: 'CLEAR_GLOSSARY' });
+            if (res && res.ok) {
+                glossaryEditorTargetLang = '';
+                await refreshGlossaryStatus();
+                showToast('Glossary cleared');
+            } else {
+                showToast('Failed to clear glossary', 'error');
+            }
+        });
+    }
+
+    // Glossary: import from TSV file
+    if (elements.glossaryImportFile) {
+        elements.glossaryImportFile.addEventListener('change', async (e) => {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
+            if (!glossaryEditorLoaded) {
+                showToast('Glossary not loaded — reload the page before importing', 'error');
+                e.target.value = '';
+                return;
+            }
             try {
                 const text = await file.text();
                 const { entries, target } = parseGlossaryTSV(text);
@@ -608,31 +821,38 @@ function setupEventListeners() {
                     showToast('No valid entries found in file', 'error');
                     return;
                 }
-                const res = await browserAPI.runtime.sendMessage({ type: 'SAVE_GLOSSARY', entries, target, name: file.name });
-                if (res && res.ok) {
-                    await refreshGlossaryStatus();
-                    showToast(`Glossary loaded: ${res.count} terms`);
-                } else {
-                    showToast('Failed to save glossary', 'error');
-                }
+                // Merge into editor: imported entries override existing ones with same source
+                const merged = new Map(glossaryEditorRows.map(r => [r.source, r.target]));
+                for (const [src, tgt] of entries) merged.set(src, tgt);
+                glossaryEditorRows = [...merged.entries()].map(([source, target]) => ({ source, target }));
+                if (target) glossaryEditorTargetLang = target;
+                renderGlossaryRows();
+                updateGlossaryBadge(glossaryEditorRows.length);
+                markGlossaryDirty();
+                showToast(`Imported ${entries.length} terms — click Save to apply`);
             } catch (err) {
                 showToast('Failed to read file', 'error');
             } finally {
-                e.target.value = ''; // allow re-loading the same file
+                e.target.value = '';
             }
         });
     }
 
-    // Glossary: clear
-    if (elements.clearGlossary) {
-        elements.clearGlossary.addEventListener('click', async () => {
-            const res = await browserAPI.runtime.sendMessage({ type: 'CLEAR_GLOSSARY' });
-            if (res && res.ok) {
-                await refreshGlossaryStatus();
-                showToast('Glossary cleared');
-            } else {
-                showToast('Failed to clear glossary', 'error');
+    // Glossary: export as TSV
+    if (elements.glossaryExportBtn) {
+        elements.glossaryExportBtn.addEventListener('click', () => {
+            const lines = [];
+            if (glossaryEditorTargetLang) lines.push(`#target: ${glossaryEditorTargetLang}`);
+            for (const { source, target } of glossaryEditorRows) {
+                if (source.trim()) lines.push(`${source}\t${target}`);
             }
+            const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'glossary.tsv';
+            a.click();
+            URL.revokeObjectURL(url);
         });
     }
 
@@ -654,6 +874,49 @@ function setupEventListeners() {
             showToast('Template copied to clipboard!');
         }).catch(() => {
             showToast('Failed to copy template', 'error');
+        });
+    });
+}
+
+// ============================================================================
+// Sidebar scrollspy — highlight the nav link matching the visible section
+// ============================================================================
+function initSidebarScrollspy() {
+    const navLinks = document.querySelectorAll('.nav-link[data-section]');
+    if (!navLinks.length) return;
+
+    // Only sections that have a nav link. Observing the others (e.g. the
+    // conditionally shown custom-prompts section) would clear the highlight
+    // entirely whenever one of them scrolled into view.
+    const sections = [...navLinks]
+        .map(link => document.getElementById(link.dataset.section))
+        .filter(Boolean);
+    if (!sections.length) return;
+
+    // Highlight the visible section nearest the top of the viewport rather than
+    // whichever entry the observer happened to report last.
+    const visible = new Set();
+    const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting) visible.add(entry.target);
+            else visible.delete(entry.target);
+        }
+        if (!visible.size) return;
+        const topmost = [...visible].reduce((best, el) =>
+            el.getBoundingClientRect().top < best.getBoundingClientRect().top ? el : best);
+        navLinks.forEach(link => {
+            link.classList.toggle('active', link.dataset.section === topmost.id);
+        });
+    }, { threshold: 0.3 });
+
+    sections.forEach(s => observer.observe(s));
+
+    // Smooth-scroll on nav click
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const target = document.getElementById(link.dataset.section);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
     });
 }
