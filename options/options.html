@@ -27,6 +27,9 @@
                 <li><a href="#section-translation" class="nav-link" data-section="section-translation">
                     <span class="nav-icon">🌍</span> Translation
                 </a></li>
+                <li><a href="#section-autotranslate" class="nav-link" data-section="section-autotranslate">
+                    <span class="nav-icon">🚀</span> Auto-Translate
+                </a></li>
                 <li><a href="#section-performance" class="nav-link" data-section="section-performance">
                     <span class="nav-icon">⚡</span> Performance
                 </a></li>
@@ -147,6 +150,64 @@
                         <div class="editor-container">
                             <div class="editor-backdrop" id="userPromptBackdrop"></div>
                             <textarea id="userPrompt" rows="4" placeholder="User prompt template..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Auto-translate -->
+            <section class="settings-section" id="section-autotranslate">
+                <div class="section-header">
+                    <h2>🚀 Auto-Translate</h2>
+                    <p class="section-description">
+                        Translate pages as soon as they load, without clicking anything.
+                    </p>
+                </div>
+
+                <div class="toggles-grid">
+                    <div class="toggle-card">
+                        <div class="toggle-card-header">
+                            <div>
+                                <div class="toggle-card-title">Automatically translate pages</div>
+                                <div class="toggle-card-desc">
+                                    A page is translated on load when it declares a language other than your target
+                                    language. Pages that don't declare one are left alone. Every translation runs on
+                                    your own machine, so this costs real time and CPU on each page you open. Enabling
+                                    this will ask for permission to run on all websites.
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="autoTranslatePages">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="autoTranslateOptions" hidden>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="neverLanguageSelect">Never auto-translate these languages</label>
+                            <div class="select-with-btn">
+                                <select id="neverLanguageSelect">
+                                    <!-- Populated dynamically -->
+                                </select>
+                                <button id="addNeverLanguage" class="icon-btn" title="Add language">＋</button>
+                            </div>
+                            <div class="chip-list" id="neverLanguageList"></div>
+                            <p class="hint">Languages you already read. Your target language is always excluded.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="neverSiteInput">Never auto-translate these sites</label>
+                            <div class="select-with-btn">
+                                <input type="text" id="neverSiteInput" placeholder="example.com">
+                                <button id="addNeverSite" class="icon-btn" title="Add site">＋</button>
+                            </div>
+                            <div class="chip-list" id="neverSiteList"></div>
+                            <p class="hint">Subdomains are covered too — <code>example.com</code> also blocks
+                                <code>news.example.com</code>. The banner shown while a page auto-translates can add
+                                sites here for you.</p>
                         </div>
                     </div>
                 </div>

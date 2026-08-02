@@ -573,6 +573,48 @@ input:checked + .slider::before {
     overflow: hidden;
 }
 
+/* Removable entries for the auto-translate never-lists */
+.chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 4px 3px 9px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 12.5px;
+    color: var(--text-primary);
+}
+
+.chip-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 1px 5px;
+    border-radius: 999px;
+    transition: var(--transition);
+}
+
+.chip-remove:hover {
+    background: rgba(230, 126, 128, 0.15);
+    color: var(--danger);
+}
+
+.chip-empty {
+    font-size: 12.5px;
+    color: var(--text-muted);
+}
+
 .glossary-filter-bar {
     padding: 8px;
     background: var(--bg-primary);

@@ -26,6 +26,7 @@ browserAPI.runtime.sendMessage({ type: 'GET_SETTINGS' }).then(r => {
         debugEnabled = !!r.settings.debug;
         if (r.settings.targetLanguage) currentTargetLanguage = r.settings.targetLanguage;
         floatingButtonEnabled = !!r.settings.floatingButton;
+        maybeAutoTranslatePage(r.settings);
     }
 }).catch(() => {});
 
@@ -94,7 +95,8 @@ function shouldSkipElement(element) {
         if (curr.getAttribute && curr.getAttribute('translate') === 'no') {
             return true;
         }
-        if (curr.id === 'llm-translator-status' || curr.id === 'llm-translator-float-btn') {
+        if (curr.id === 'llm-translator-status' || curr.id === 'llm-translator-float-btn'
+                || curr.id === 'llm-translator-autobar') {
             return true;
         }
         curr = curr.parentElement;
@@ -582,6 +584,139 @@ function getDeclaredPageLanguage() {
 
 function getPageLanguage() {
     return getDeclaredPageLanguage() || 'en'; // Default fallback for translation source
+}
+
+// ============================================================================
+// Auto-translate on page load
+//
+// Opt-in (settings.autoTranslatePages). Only runs when the page *declares* a
+// language different from the target one — guessing would mean burning local
+// inference on pages that are already readable, so an undeclared page is left
+// alone. Two escape hatches are offered on the page itself while it runs.
+// ============================================================================
+
+let autoTranslateChecked = false;
+
+// A never-list entry covers its own host and any subdomain, so "example.com"
+// also matches "news.example.com".
+function hostMatchesNeverSite(hostname, sites) {
+    const host = (hostname || '').toLowerCase();
+    if (!host || !Array.isArray(sites)) return false;
+    return sites.some(entry => {
+        const site = String(entry || '').trim().toLowerCase();
+        if (!site) return false;
+        return host === site || host.endsWith('.' + site);
+    });
+}
+
+// Decide whether this page should be translated without the user asking, and
+// do it. Safe to call more than once — only the first call is acted on.
+async function maybeAutoTranslatePage(settings) {
+    if (autoTranslateChecked) return;
+    autoTranslateChecked = true;
+
+    if (!settings || !settings.autoTranslatePages) return;
+    // Top-level documents only. Translating every ad and widget iframe on a page
+    // would multiply the request count for text the user mostly cannot see.
+    if (window.top !== window.self) return;
+    if (translationInProgress) return;
+
+    const pageLang = getDeclaredPageLanguage();
+    if (!pageLang) return;
+
+    const target = String(settings.targetLanguage || currentTargetLanguage || 'en')
+        .split('-')[0].toLowerCase();
+    if (pageLang === target) return;
+
+    const neverLangs = Array.isArray(settings.autoTranslateNeverLanguages)
+        ? settings.autoTranslateNeverLanguages
+        : [];
+    if (neverLangs.includes(pageLang)) return;
+
+    if (hostMatchesNeverSite(location.hostname, settings.autoTranslateNeverSites)) return;
+
+    debugLog(`[Translator] Auto-translating page from ${pageLang} to ${target}`);
+    showAutoTranslateBar(pageLang, target);
+    try {
+        await translatePage(target, pageLang);
+    } finally {
+        hideAutoTranslateBar();
+    }
+}
+
+/**
+ * Bar shown while an auto-translation runs, offering a way out of it.
+ * Separate from showStatus(), which owns its element's textContent and so
+ * cannot hold buttons.
+ */
+function showAutoTranslateBar(sourceLang, targetLang) {
+    hideAutoTranslateBar();
+
+    const bar = document.createElement('div');
+    bar.id = 'llm-translator-autobar';
+    bar.setAttribute('translate', 'no');
+    bar.style.cssText = [
+        'position:fixed', 'bottom:20px', 'left:20px', 'z-index:999999',
+        'display:flex', 'align-items:center', 'gap:10px',
+        'padding:10px 14px', 'border-radius:8px',
+        'background:#2D353B', 'color:#D3C6AA',
+        'font-family:system-ui,-apple-system,sans-serif', 'font-size:13px',
+        'box-shadow:0 4px 12px rgba(0,0,0,0.25)',
+        'transition:opacity 0.3s', 'opacity:1'
+    ].join(';');
+
+    const label = document.createElement('span');
+    label.textContent = `Auto-translating ${getLanguageName(sourceLang)} → ${getLanguageName(targetLang)}`;
+
+    const btnStyle = [
+        'background:transparent', 'border:1px solid #4F5B58', 'color:#D3C6AA',
+        'padding:3px 8px', 'border-radius:5px', 'cursor:pointer',
+        'font-family:inherit', 'font-size:12px'
+    ].join(';');
+
+    const stopBtn = document.createElement('button');
+    stopBtn.textContent = 'Stop';
+    stopBtn.style.cssText = btnStyle;
+    stopBtn.addEventListener('click', () => {
+        cancelAutoTranslation();
+        hideAutoTranslateBar();
+    });
+
+    const neverBtn = document.createElement('button');
+    neverBtn.textContent = 'Never on this site';
+    neverBtn.style.cssText = btnStyle;
+    neverBtn.addEventListener('click', async () => {
+        cancelAutoTranslation();
+        hideAutoTranslateBar();
+        try {
+            await browserAPI.runtime.sendMessage({
+                type: 'ADD_AUTO_TRANSLATE_NEVER_SITE',
+                hostname: location.hostname
+            });
+            showStatus(`${location.hostname} will not be auto-translated`);
+        } catch (e) {
+            showStatus('Could not save the site preference', true);
+        }
+        setTimeout(hideStatus, 3000);
+    });
+
+    bar.append(label, stopBtn, neverBtn);
+    document.body.appendChild(bar);
+}
+
+function hideAutoTranslateBar() {
+    const bar = document.getElementById('llm-translator-autobar');
+    if (bar) bar.remove();
+}
+
+// Stop an in-flight auto-translation and put the original text back, so opting
+// out leaves the page as it was found.
+function cancelAutoTranslation() {
+    translationCancelled = true;
+    pendingTranslationQueue = [];
+    stopAutoTranslate();
+    restoreOriginalText();
+    hideStatus();
 }
 
 /**

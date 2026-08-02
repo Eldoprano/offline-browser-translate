@@ -30,7 +30,10 @@ const DEFAULT_SETTINGS = {
     numCtx: 0,
     cacheMode: 'off',
     debug: false,
-    floatingButton: false
+    floatingButton: false,
+    autoTranslatePages: false,
+    autoTranslateNeverLanguages: [],
+    autoTranslateNeverSites: []
 };
 
 // DOM Elements
@@ -1033,15 +1036,18 @@ function setupEventListeners() {
                     showToast('Permission denied', 'error');
                     return;
                 }
-                await browserAPI.runtime.sendMessage({ type: 'REGISTER_CONTENT_SCRIPT' });
                 showToast('Floating button enabled — reload pages to activate');
             } else {
-                await browserAPI.runtime.sendMessage({ type: 'UNREGISTER_CONTENT_SCRIPT' });
-                try { await browserAPI.permissions.remove({ origins: ['<all_urls>'] }); } catch (e) {}
-                showToast('Floating button disabled — permission removed');
+                showToast('Floating button disabled');
             }
             currentSettings.floatingButton = e.target.checked;
             await browserAPI.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: currentSettings });
+            // Background decides whether content.js stays registered — auto-translate
+            // may still need it even with the floating button off.
+            await browserAPI.runtime.sendMessage({ type: 'SYNC_CONTENT_SCRIPT' });
+            if (!e.target.checked && !currentSettings.autoTranslatePages) {
+                try { await browserAPI.permissions.remove({ origins: ['<all_urls>'] }); } catch (err) {}
+            }
         });
     }
 
@@ -1113,6 +1119,8 @@ function setupEventListeners() {
                 type: 'SAVE_SETTINGS',
                 settings: currentSettings
             });
+            // Defaults turn off both all-sites features, so drop the registration.
+            await browserAPI.runtime.sendMessage({ type: 'SYNC_CONTENT_SCRIPT' });
             applySettingsToUI();
             showToast('Settings reset to defaults');
         });

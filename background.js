@@ -40,7 +40,13 @@ const DEFAULT_SETTINGS = {
     cacheMode: 'off',
     debug: false,       // Enable verbose logging
     floatingButton: false, // Show floating translate button on text selection (requires <all_urls> permission)
-    useGlossary: true   // Inject matching glossary terms into the prompt for consistent proper-noun translation
+    useGlossary: true,  // Inject matching glossary terms into the prompt for consistent proper-noun translation
+    // Translate a page as soon as it loads when it declares a language other
+    // than the target one (requires <all_urls> permission). Off by default:
+    // every page load costs real inference time on the user's own machine.
+    autoTranslatePages: false,
+    autoTranslateNeverLanguages: [], // language codes to leave alone
+    autoTranslateNeverSites: []      // hostnames to leave alone (subdomains included)
 };
 
 let debugEnabled = false;
@@ -112,6 +118,46 @@ async function getSettings() {
         return loadSettings();
     }
     return cachedSettings;
+}
+
+// ============================================================================
+// Content script auto-injection
+//
+// Most of the extension works by injecting content.js on demand when the user
+// asks for a translation. Two features instead need it present on every page
+// before the user does anything: the floating selection button, and
+// auto-translate. Registration is therefore keyed off the union of the two --
+// turning one off must not pull the script out from under the other.
+// ============================================================================
+
+const CONTENT_SCRIPT_ID = 'llm-translator-content';
+
+function needsContentScript(settings) {
+    return !!(settings && (settings.floatingButton || settings.autoTranslatePages));
+}
+
+async function syncContentScriptRegistration() {
+    const settings = await getSettings();
+    if (needsContentScript(settings)) {
+        try {
+            await browserAPI.scripting.registerContentScripts([{
+                id: CONTENT_SCRIPT_ID,
+                matches: ['http://*/*', 'https://*/*'],
+                js: ['content.js'],
+                runAt: 'document_idle'
+            }]);
+        } catch (e) {
+            // Already registered — not an error
+        }
+        return true;
+    }
+
+    try {
+        await browserAPI.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+    } catch (e) {
+        // Not registered — not an error
+    }
+    return false;
 }
 
 // ============================================================================
@@ -1107,28 +1153,30 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ models });
                     break;
 
-                case 'REGISTER_CONTENT_SCRIPT':
-                    try {
-                        await browserAPI.scripting.registerContentScripts([{
-                            id: 'llm-translator-content',
-                            matches: ['http://*/*', 'https://*/*'],
-                            js: ['content.js'],
-                            runAt: 'document_idle'
-                        }]);
-                    } catch (e) {
-                        // Already registered — not an error
-                    }
-                    sendResponse({ ok: true });
+                case 'SYNC_CONTENT_SCRIPT': {
+                    // Register or unregister based on the *current* settings, so
+                    // callers only have to save their setting and ask for a sync.
+                    const registered = await syncContentScriptRegistration();
+                    sendResponse({ ok: true, registered });
                     break;
+                }
 
-                case 'UNREGISTER_CONTENT_SCRIPT':
-                    try {
-                        await browserAPI.scripting.unregisterContentScripts({ ids: ['llm-translator-content'] });
-                    } catch (e) {
-                        // Not registered — not an error
+                case 'ADD_AUTO_TRANSLATE_NEVER_SITE': {
+                    // Sent from the on-page banner's "Never on this site" button.
+                    const host = typeof message.hostname === 'string' ? message.hostname.trim().toLowerCase() : '';
+                    if (!host) {
+                        sendResponse({ ok: false });
+                        break;
                     }
-                    sendResponse({ ok: true });
+                    const current = await getSettings();
+                    const sites = Array.isArray(current.autoTranslateNeverSites)
+                        ? [...current.autoTranslateNeverSites]
+                        : [];
+                    if (!sites.includes(host)) sites.push(host);
+                    await saveSettings({ autoTranslateNeverSites: sites });
+                    sendResponse({ ok: true, sites });
                     break;
+                }
 
                 case 'TRANSLATE':
                     // Pass sourceLanguage for TranslateGemma support
@@ -1302,21 +1350,9 @@ browserAPI.runtime.onInstalled.addListener(async () => {
     // Auto-detect and select a model on fresh install (when none is configured yet)
     await autoDetectAndSelectModel();
 
-    // Re-register content script auto-injection if the user had the floating button enabled.
+    // Re-register content script auto-injection if a feature still needs it.
     // registerContentScripts() registrations are cleared on extension update/reinstall.
-    const settings = await getSettings();
-    if (settings.floatingButton) {
-        try {
-            await browserAPI.scripting.registerContentScripts([{
-                id: 'llm-translator-content',
-                matches: ['http://*/*', 'https://*/*'],
-                js: ['content.js'],
-                runAt: 'document_idle'
-            }]);
-        } catch (e) {
-            // Already registered (e.g. fresh install where registration survived)
-        }
-    }
+    await syncContentScriptRegistration();
 });
 
 browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {

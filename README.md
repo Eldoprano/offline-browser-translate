@@ -12,7 +12,8 @@ A privacy-focused browser extension that translates web pages using local LLMs (
 - 🎯 **Smart Prioritization** - Visible content and headings are translated first
 - 🌍 **Many Languages** - Supports many many languages :3
 - ⚡ **Translation Cache** - Optional: translate identical text once and reuse it (great for forums). Off by default; stored locally with a session-only or persistent mode
-- 📖 **Glossary** - Force consistent translations for proper nouns and UI labels via a user-supplied TSV dictionary
+- 📖 **Glossary** - Force consistent translations for proper nouns and UI labels via a user-supplied dictionary
+- 🚀 **Auto-Translate** - Optional: translate foreign-language pages the moment they load, with per-language and per-site exclusions
 
 ## Requirements
 
@@ -81,6 +82,18 @@ Click **Advanced Settings** to configure:
 | Request Format (*work in progress*) | Default JSON, Hunyuan-MT, Simple, or Custom |
 | Show Glow | Toggle visual indicator on translated text |
 | Cache translations | Reuse stored translations for identical text — *off* (default), *until browser close*, or *across sessions*; includes a "Clear cache" button |
+| Automatically translate pages | Translate foreign-language pages on load, with never-lists for languages and sites — *off* by default |
+
+## Auto-Translate
+
+By default nothing is translated until you ask for it. Turn on **Options → Auto-Translate → Automatically translate pages** and a page is instead translated as soon as it loads, whenever it declares a language other than your target language.
+
+- **Undeclared pages are left alone.** The language is read from the page's `lang` attribute (or a `content-language` meta tag). Pages that declare nothing are skipped rather than guessed at — a wrong guess would spend real inference time making a page you can already read worse.
+- **Only top-level pages.** Iframes are skipped, so ads and embedded widgets don't multiply the request count.
+- **Escape hatches while it runs.** A small bar appears in the corner with **Stop** (halt and put the original text back) and **Never on this site** (same, plus adds the site to the exclusion list).
+- **Exclusions.** Keep a list of languages you already read, and a list of sites to leave alone. Site entries cover subdomains, so `example.com` also excludes `news.example.com`.
+
+This needs permission to run on all websites, since the extension has to be present on a page before you have asked for anything. Bear in mind that every page you open now costs a full translation run on your own hardware.
 
 ## Translation Cache
 
