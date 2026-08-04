@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
+    filterLlamaCppUiModels: false,
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -61,6 +62,7 @@ const elements = {
     providerSelect: document.getElementById('providerSelect'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
+    filterLlamaCppUiModels: document.getElementById('filterLlamaCppUiModels'),
     cacheMode: document.getElementById('cacheMode'),
     cacheBackendWarning: document.getElementById('cacheBackendWarning'),
     cacheNewBadge: document.getElementById('cacheNewBadge'),
@@ -609,6 +611,7 @@ function applySettingsToUI() {
     elements.providerSelect.value = currentSettings.provider;
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
+    elements.filterLlamaCppUiModels.checked = !!currentSettings.filterLlamaCppUiModels;
     if (elements.cacheMode) elements.cacheMode.value = currentSettings.cacheMode || 'off';
     if (elements.floatingButton) elements.floatingButton.checked = !!currentSettings.floatingButton;
     if (elements.autoTranslatePages) elements.autoTranslatePages.checked = !!currentSettings.autoTranslatePages;
@@ -856,6 +859,7 @@ async function saveCurrentSettings() {
         provider: elements.providerSelect.value,
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
+        filterLlamaCppUiModels: elements.filterLlamaCppUiModels.checked,
         selectedModel: modelPicker.getValue(),
         pinnedModels: [...modelPicker.pinned],
         targetLanguage: langPicker.getValue(),
@@ -1121,6 +1125,11 @@ function setupEventListeners() {
             }
         });
     }
+
+    elements.filterLlamaCppUiModels.addEventListener('change', async () => {
+        await saveCurrentSettings();
+        await loadModels();
+    });
 
     // Save settings button
     elements.saveSettings.addEventListener('click', async () => {

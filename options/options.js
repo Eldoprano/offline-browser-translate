@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
+    filterLlamaCppUiModels: false,
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -91,6 +92,7 @@ const elements = {
     modelMenu: document.getElementById('modelMenu'),
     modelSearch: document.getElementById('modelSearch'),
     modelList: document.getElementById('modelList'),
+    filterLlamaCppUiModels: document.getElementById('filterLlamaCppUiModels'),
     refreshModels: document.getElementById('refreshModels'),
     sourceLanguagePickerEl: document.getElementById('sourceLanguagePickerEl'),
     sourceLanguageTrigger: document.getElementById('sourceLanguageTrigger'),
@@ -868,6 +870,7 @@ function applySettingsToUI() {
     providerPicker.setValue(currentSettings.provider);
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
+    elements.filterLlamaCppUiModels.checked = !!currentSettings.filterLlamaCppUiModels;
     sourceLanguagePicker.setValue(currentSettings.sourceLanguage || 'auto');
     langPicker.setPinned(currentSettings.pinnedLanguages || []);
     langPicker.setValue(currentSettings.targetLanguage);
@@ -998,6 +1001,7 @@ async function saveCurrentSettings() {
         provider: providerPicker.getValue(),
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
+        filterLlamaCppUiModels: elements.filterLlamaCppUiModels.checked,
         selectedModel: modelPicker.getValue() || currentSettings.selectedModel,
         pinnedModels: [...modelPicker.pinned],
         sourceLanguage: sourceLanguagePicker.getValue(),
@@ -1253,6 +1257,15 @@ function setupEventListeners() {
             showToast('Models refreshed');
         });
     }
+
+    elements.filterLlamaCppUiModels.addEventListener('change', async () => {
+        currentSettings.filterLlamaCppUiModels = elements.filterLlamaCppUiModels.checked;
+        await browserAPI.runtime.sendMessage({
+            type: 'SAVE_SETTINGS',
+            settings: { filterLlamaCppUiModels: currentSettings.filterLlamaCppUiModels }
+        });
+        await loadModels();
+    });
 
     // Save settings
     elements.saveSettings.addEventListener('click', async () => {
