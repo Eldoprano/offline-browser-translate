@@ -126,6 +126,11 @@
         <input type="text" id="lmstudioUrl" placeholder="http://localhost:1234">
       </div>
 
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="filterLlamaCppUiModels">
+        <label for="filterLlamaCppUiModels">For llama.cpp, show only models with ui = true</label>
+      </div>
+
       <div class="form-group">
         <label for="maxTokens">Max tokens per batch</label>
         <input type="number" id="maxTokens" min="100" max="8000" step="100">

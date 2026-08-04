@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
+    filterLlamaCppUiModels: false,
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -62,6 +63,7 @@ const elements = {
     providerSelect: document.getElementById('providerSelect'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
+    filterLlamaCppUiModels: document.getElementById('filterLlamaCppUiModels'),
     maxTokens: document.getElementById('maxTokens'),
     maxItems: document.getElementById('maxItems'),
     temperature: document.getElementById('temperature'),
@@ -577,6 +579,7 @@ function applySettingsToUI() {
     elements.providerSelect.value = currentSettings.provider;
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
+    elements.filterLlamaCppUiModels.checked = !!currentSettings.filterLlamaCppUiModels;
     elements.maxTokens.value = currentSettings.maxTokensPerBatch;
     elements.maxItems.value = currentSettings.maxItemsPerBatch || 8;
     elements.temperature.value = currentSettings.temperature;
@@ -829,6 +832,7 @@ async function saveCurrentSettings() {
         provider: elements.providerSelect.value,
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
+        filterLlamaCppUiModels: elements.filterLlamaCppUiModels.checked,
         selectedModel: modelPicker.getValue(),
         pinnedModels: [...modelPicker.pinned],
         targetLanguage: langPicker.getValue(),
@@ -1154,6 +1158,11 @@ function setupEventListeners() {
     elements.providerSelect.addEventListener('change', async () => {
         await saveCurrentSettings();
         await checkProviders();
+        await loadModels(true);
+    });
+
+    elements.filterLlamaCppUiModels.addEventListener('change', async () => {
+        await saveCurrentSettings();
         await loadModels(true);
     });
 

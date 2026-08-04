@@ -134,6 +134,7 @@
 - For TranslateGemma 4B/12B routing, prefer dedicated llama.cpp model aliases such as `translategemma-4b-translate` and `translategemma-12b-translate` with `c = 4096`, `parallel = 1`, `n-gpu-layers = 99`. The extension auto-routing only looks for 4B/12B TranslateGemma model IDs; keep both tokens in the aliases.
 - Gemma 4 E4B benchmark is documentation-only. If integrating it into the extension as a first-class option, decide its request format/prompt separately; it is not a TranslateGemma model, so the current 4B/12B TranslateGemma fallback logic does not apply automatically.
 - QAT comparison is documented in README: `gemma-4-E4B-it-qat` is substantially faster than Q4_K_M on the short benchmark, but quality has not been accepted as a replacement default. QAT was reloaded after the measurement.
+- `filterLlamaCppUiModels` is opt-in and only filters llama.cpp router entries that explicitly serialize `webui = false`; preserve that fallback behavior for generic OpenAI-compatible servers.
 - Existing unrelated local change remains in `examples/ui-labels-ja.tsv`; do not include it unless the user explicitly wants that file committed.
 - Existing untracked `memo.txt` is unrelated; leave it uncommitted unless the user explicitly asks for it.
 
@@ -164,3 +165,9 @@
 - Safe local fix: keep `--host 127.0.0.1` and pass the extension origin only, e.g. `--cors-origins "moz-extension://ca462efa-9eb3-47a8-b32e-c8f6d7b859c9"`. When copying from a script URL like `/languages.js`, strip the path; CORS origin is scheme + host only.
 - `--cors-origins "*"` works but is broader than needed. `--cors-origins "localhost,moz-extension://..."` can fail on this llama.cpp build because the server returns the comma-separated string literally, while Firefox expects a single matching `Access-Control-Allow-Origin` value.
 - Direct use of the built-in `llama-server` Web UI at `http://127.0.0.1:8080` does not require adding `localhost` to CORS.
+
+### llama.cpp model-list visibility filter (2026-08-04)
+
+- The extension's LM Studio / OpenAI-compatible model picker now has an opt-in `filterLlamaCppUiModels` setting, exposed in both Options and the popup's Advanced Settings as “For llama.cpp, show only models with `ui = true`”. It defaults to off so LM Studio and existing OpenAI-compatible servers keep their full lists.
+- llama.cpp router returns each rendered model preset in `/v1/models`; its `ui` option is serialized as `webui`. When the setting is enabled, the background filters only entries whose preset says `webui = false`. Models from LM Studio/vLLM and servers without this router-specific metadata remain visible.
+- Model-list caching is keyed by both provider selection and this filter setting, so toggling it cannot return the prior unfiltered list. User verified the behavior in Firefox after reloading the extension.

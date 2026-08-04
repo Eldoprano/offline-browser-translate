@@ -40,6 +40,11 @@
                         <label for="lmstudioUrl">LM Studio / OpenAI-compatible URL</label>
                         <input type="text" id="lmstudioUrl" placeholder="http://localhost:1234">
                         <p class="hint">Also works with llama.cpp (llama-server), vLLM, and any other OpenAI-compatible server — enter its base URL here.</p>
+                        <div class="checkbox-row">
+                            <input type="checkbox" id="filterLlamaCppUiModels">
+                            <label for="filterLlamaCppUiModels">For llama.cpp, show only models with <code>ui = true</code></label>
+                        </div>
+                        <p class="hint">Ignored by LM Studio and other OpenAI-compatible servers.</p>
                     </div>
                 </div>
 

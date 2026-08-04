@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
     provider: 'auto',
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
+    filterLlamaCppUiModels: false,
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
@@ -75,6 +76,7 @@ const elements = {
     providerSelect: document.getElementById('providerSelect'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
+    filterLlamaCppUiModels: document.getElementById('filterLlamaCppUiModels'),
     modelSelect: document.getElementById('modelSelect'),
     refreshModels: document.getElementById('refreshModels'),
     sourceLanguage: document.getElementById('sourceLanguage'),
@@ -303,6 +305,7 @@ function applySettingsToUI() {
     elements.providerSelect.value = currentSettings.provider;
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
+    elements.filterLlamaCppUiModels.checked = !!currentSettings.filterLlamaCppUiModels;
     elements.sourceLanguage.value = currentSettings.sourceLanguage || 'auto';
     elements.targetLanguage.value = currentSettings.targetLanguage;
     elements.requestFormat.value = currentSettings.requestFormat;
@@ -394,6 +397,7 @@ async function saveCurrentSettings() {
         provider: elements.providerSelect.value,
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
+        filterLlamaCppUiModels: elements.filterLlamaCppUiModels.checked,
         selectedModel: elements.modelSelect?.value || currentSettings.selectedModel,
         sourceLanguage: elements.sourceLanguage.value,
         targetLanguage: elements.targetLanguage.value,
@@ -545,6 +549,15 @@ function setupEventListeners() {
         await browserAPI.runtime.sendMessage({
             type: 'SAVE_SETTINGS',
             settings: { provider: currentSettings.provider }
+        });
+        await loadModels(true);
+    });
+
+    elements.filterLlamaCppUiModels.addEventListener('change', async () => {
+        currentSettings.filterLlamaCppUiModels = elements.filterLlamaCppUiModels.checked;
+        await browserAPI.runtime.sendMessage({
+            type: 'SAVE_SETTINGS',
+            settings: { filterLlamaCppUiModels: currentSettings.filterLlamaCppUiModels }
         });
         await loadModels(true);
     });
