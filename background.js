@@ -621,15 +621,30 @@ function parseTranslationResponse(response, originalItems) {
     if (current) segments.push(current);
 
     if (segments.length > 0) {
-        for (let i = 0; i < segments.length; i++) {
-            const seg = segments[i];
+        // Decide once for the whole response whether the model's numbering can be
+        // trusted, instead of per segment. Some models (TranslateGemma especially)
+        // drop a segment and renumber the rest into an unbroken run, which keeps
+        // every label inside our valid range while shifting each translation onto
+        // its neighbour's id — silently mangling the page. An unbroken run that is
+        // shorter than expected is indistinguishable from the model having dropped
+        // the first or last item and numbered correctly, so it cannot be trusted
+        // either way. Reject it and let the caller retry the items individually.
+        // A run with a real gap proves our numbering survived, so it is honoured.
+        const ids = segments.map(s => s.id);
+        const ourIds = new Set(originalItems.map(item => item.id));
+        const allOurs = ids.every(id => ourIds.has(id));
+        const unique = new Set(ids).size === ids.length;
+        const unbrokenRun = ids.every((id, i) => id === ids[0] + i);
+        if (!allOurs || !unique || (unbrokenRun && ids.length !== expectedCount)) {
+            debugWarn(`[Background] expected ${expectedCount} items, got labels [${ids.join(',')}]`
+                + ` - numbering unreliable, rejecting batch`);
+            return [];
+        }
+
+        for (const seg of segments) {
             const text = seg.text.trim();
             if (!text) continue;
-            const isOurId = originalItems.some(item => item.id === seg.id);
-            translations.push({
-                id: isOurId ? seg.id : (originalItems[i]?.id ?? seg.id),
-                text: cleanTranslationText(text)
-            });
+            translations.push({ id: seg.id, text: cleanTranslationText(text) });
         }
         return translations;
     }
@@ -926,6 +941,16 @@ async function translate(textItems, targetLanguage, settings) {
         return good;
     };
 
+    // Translate one item on its own, using the format's own template with a single
+    // unmarked segment — the shape these models were trained on. There is no batch
+    // structure to parse, so the result cannot land on the wrong item.
+    const requestOne = async (text) => {
+        const vars = { ...baseVars, texts: text };
+        const raw = await callProvider(provider, settings, modelId,
+            buildPrompt(systemTemplate, vars), buildPrompt(userTemplate, vars), false);
+        return cleanTranslationText((raw || '').trim());
+    };
+
     const results = new Map();          // originalId -> final translated text
 
     // ---- Cache + de-duplication --------------------------------------------
@@ -1027,18 +1052,29 @@ async function translate(textItems, targetLanguage, settings) {
         if (pending.length) {
             debugWarn(`[Background] ${pending.length} item(s) malformed/missing after attempt ${attempt + 1}`);
         }
+        // Nothing usable at all from a multi-item batch means the response could not
+        // be aligned. Re-sending identical input to a near-deterministic model just
+        // reproduces the same failure, so skip the remaining retries and let the
+        // per-item fallback below resolve it.
+        if (good.size === 0 && pending.length > 1) {
+            debugWarn(`[Background] batch unusable - skipping remaining retries`);
+            break;
+        }
     }
 
-    // Plain-text fallback: translate the still-failing items one-by-one with no
-    // structure to parse. Only for JSON-style formats (plain formats already are).
-    if (pending.length > 0 && !isPlainText && settings.plainTextFallback !== false) {
-        debugWarn(`[Background] Falling back to plain-text translation for ${pending.length} item(s)`);
+    // Per-item fallback: translate the still-failing items one at a time, with no
+    // batch structure to parse. Plain-text formats need this too — they carry the
+    // same [id]: markers in a batched prompt, and a dropped segment shifts the rest.
+    if (pending.length > 0 && settings.plainTextFallback !== false) {
+        debugWarn(`[Background] Falling back to per-item translation for ${pending.length} item(s)`);
         for (const item of pending) {
             try {
-                const text = await translatePlainItem(provider, settings, modelId, item.text, baseVars);
+                const text = isPlainText
+                    ? await requestOne(item.text)
+                    : await translatePlainItem(provider, settings, modelId, item.text, baseVars);
                 if (text && !isSuspiciousTranslation(text)) results.set(item.id, text);
             } catch (e) {
-                debugWarn(`[Background] plain-text fallback failed for id ${item.id}:`, e.message);
+                debugWarn(`[Background] per-item fallback failed for id ${item.id}:`, e.message);
             }
         }
     }
