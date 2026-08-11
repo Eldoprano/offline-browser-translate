@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
 // ============================================================================
 
 let currentSettings = { ...DEFAULT_SETTINGS };
-let sourceLanguage = 'en';
+let sourceLanguage = 'auto';
 let targetLanguage = 'es';
 let isTranslating = false;
 let selectedModel = null;
@@ -118,6 +118,17 @@ function toggleTheme() {
 // Language Selector
 // ============================================================================
 
+// 'auto' is a source-only pseudo-language: most prompt formats never read
+// {{sourceLang}}, so forcing a real pick there is meaningless. background.js
+// already treats sourceLanguage:'auto' as "unspecified, default to English if
+// the active format needs it" (see translate() in background.js).
+const AUTO_SOURCE_CODE = 'auto';
+const AUTO_SOURCE_LABEL = 'Auto-detect';
+
+function langDisplayName(code) {
+    return code === AUTO_SOURCE_CODE ? AUTO_SOURCE_LABEL : (LANGUAGES[code] || code);
+}
+
 function buildLanguageSelector(type) {
     const pinnedContainer = type === 'source' ? els.sourceLangPinned : els.targetLangPinned;
     const listContainer = type === 'source' ? els.sourceLangList : els.targetLangList;
@@ -126,6 +137,31 @@ function buildLanguageSelector(type) {
     // Clear existing
     pinnedContainer.textContent = '';
     listContainer.textContent = '';
+
+    // Source can be left unspecified — only some prompt formats use it.
+    if (type === 'source') {
+        const autoChip = document.createElement('button');
+        autoChip.className = 'lang-chip' + (currentLang === AUTO_SOURCE_CODE ? ' active' : '');
+        autoChip.textContent = AUTO_SOURCE_LABEL;
+        autoChip.dataset.code = AUTO_SOURCE_CODE;
+        autoChip.type = 'button';
+        autoChip.addEventListener('click', () => selectLanguage(type, AUTO_SOURCE_CODE));
+        pinnedContainer.appendChild(autoChip);
+
+        const autoItem = document.createElement('div');
+        autoItem.className = 'lang-item' + (currentLang === AUTO_SOURCE_CODE ? ' active' : '');
+        autoItem.dataset.code = AUTO_SOURCE_CODE;
+        autoItem.dataset.name = 'auto-detect';
+        const autoCodeSpan = document.createElement('span');
+        autoCodeSpan.className = 'lang-code';
+        autoCodeSpan.textContent = '—';
+        const autoNameSpan = document.createElement('span');
+        autoNameSpan.textContent = AUTO_SOURCE_LABEL;
+        autoItem.appendChild(autoCodeSpan);
+        autoItem.appendChild(autoNameSpan);
+        autoItem.addEventListener('click', () => selectLanguage(type, AUTO_SOURCE_CODE));
+        listContainer.appendChild(autoItem);
+    }
 
     // Pinned chips
     for (const code of PINNED_LANGUAGES) {
@@ -165,7 +201,7 @@ function buildLanguageSelector(type) {
 }
 
 function selectLanguage(type, code) {
-    const name = LANGUAGES[code] || code;
+    const name = langDisplayName(code);
 
     if (type === 'source') {
         sourceLanguage = code;
@@ -227,12 +263,19 @@ function filterLanguages(type, query) {
 // ============================================================================
 
 function swapLanguages() {
+    // Target must stay a concrete language — nothing sensible to swap into it
+    // when source is unspecified.
+    if (sourceLanguage === AUTO_SOURCE_CODE) {
+        showToast('Pick a specific source language first', 'error');
+        return;
+    }
+
     const tmpLang = sourceLanguage;
     sourceLanguage = targetLanguage;
     targetLanguage = tmpLang;
 
-    els.sourceLangName.textContent = LANGUAGES[sourceLanguage] || sourceLanguage;
-    els.targetLangName.textContent = LANGUAGES[targetLanguage] || targetLanguage;
+    els.sourceLangName.textContent = langDisplayName(sourceLanguage);
+    els.targetLangName.textContent = langDisplayName(targetLanguage);
 
     // Move translation output to source input
     const outputEl = els.targetOutput.querySelector('.translated-text');
@@ -328,7 +371,7 @@ function showTranslation(text) {
     span.textContent = text;
     els.targetOutput.appendChild(span);
     els.copyBtn.hidden = false;
-    els.translationInfo.textContent = `${LANGUAGES[sourceLanguage] || sourceLanguage} → ${LANGUAGES[targetLanguage] || targetLanguage}`;
+    els.translationInfo.textContent = `${langDisplayName(sourceLanguage)} → ${langDisplayName(targetLanguage)}`;
 }
 
 function showTranslationError(message) {
@@ -641,8 +684,8 @@ async function init() {
     }
 
     // Update UI
-    els.sourceLangName.textContent = LANGUAGES[sourceLanguage] || sourceLanguage;
-    els.targetLangName.textContent = LANGUAGES[targetLanguage] || targetLanguage;
+    els.sourceLangName.textContent = langDisplayName(sourceLanguage);
+    els.targetLangName.textContent = langDisplayName(targetLanguage);
 
     // Build language selectors
     buildLanguageSelector('source');
