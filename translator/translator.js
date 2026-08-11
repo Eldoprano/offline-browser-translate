@@ -22,9 +22,7 @@ const DEFAULT_SETTINGS = {
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
     maxConcurrentRequests: 4,
-    useAdvanced: false,
-    customSystemPrompt: '',
-    customUserPromptTemplate: '',
+    customPrompts: {}, // per-format prompt overrides, edited on the options page
     requestFormat: 'auto',
     temperature: 0.3,
     useStructuredOutput: true,

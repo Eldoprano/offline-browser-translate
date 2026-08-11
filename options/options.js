@@ -12,19 +12,22 @@ const DEFAULT_SETTINGS = {
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
+    pinnedLanguages: [],
+    pinnedModels: [],
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
-    maxConcurrentRequests: 4, // 1-4 parallel requests for LMStudio 0.4.0+
-    useAdvanced: false,
-    customSystemPrompt: '',
-    customUserPromptTemplate: '',
+    maxConcurrentRequests: 4, // 1-32 parallel requests (LMStudio 0.4.0+ supports parallelism)
+    // Per-format prompt overrides: { [format]: { system, user } }. No 'auto' entry —
+    // auto always resolves to a concrete format first, and that format's (possibly
+    // overridden) prompt is what actually gets used.
+    customPrompts: {},
     requestFormat: 'auto',
     temperature: 0.3,
     useStructuredOutput: true,
     maxOutputRetries: 2,
     plainTextFallback: true,
     showGlow: false,  // Disabled by default
-    useGlossary: true,
+    useGlossary: false,  // Off by default; enable once you've set up terms
     cacheMode: 'off',
     autoTranslatePages: false,
     autoTranslateNeverLanguages: [],
@@ -33,7 +36,7 @@ const DEFAULT_SETTINGS = {
 
 // Format descriptions
 const FORMAT_DESCRIPTIONS = {
-    auto: 'Picks the right format automatically based on the selected model.',
+    auto: 'Picks the format automatically based on the selected model.',
     default: 'Standard JSON output format. Best for most models.',
     translategemma: 'Specialized format for TranslateGemma models.',
     hunyuan: 'Format optimized for Hunyuan-MT models. No system message.',
@@ -75,16 +78,40 @@ Produce only the {{targetLang}} translation, without any additional explanations
 
 // DOM Elements
 const elements = {
-    providerSelect: document.getElementById('providerSelect'),
+    providerPickerEl: document.getElementById('providerPickerEl'),
+    providerTrigger: document.getElementById('providerTrigger'),
+    providerTriggerLabel: document.getElementById('providerTriggerLabel'),
+    providerMenu: document.getElementById('providerMenu'),
+    providerList: document.getElementById('providerList'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
-    modelSelect: document.getElementById('modelSelect'),
+    modelPickerEl: document.getElementById('modelPickerEl'),
+    modelTrigger: document.getElementById('modelTrigger'),
+    modelTriggerLabel: document.getElementById('modelTriggerLabel'),
+    modelMenu: document.getElementById('modelMenu'),
+    modelSearch: document.getElementById('modelSearch'),
+    modelList: document.getElementById('modelList'),
     refreshModels: document.getElementById('refreshModels'),
-    sourceLanguage: document.getElementById('sourceLanguage'),
+    sourceLanguagePickerEl: document.getElementById('sourceLanguagePickerEl'),
+    sourceLanguageTrigger: document.getElementById('sourceLanguageTrigger'),
+    sourceLanguageTriggerLabel: document.getElementById('sourceLanguageTriggerLabel'),
+    sourceLanguageMenu: document.getElementById('sourceLanguageMenu'),
+    sourceLanguageList: document.getElementById('sourceLanguageList'),
     sourceLanguageGroup: document.getElementById('sourceLanguageGroup'),
-    targetLanguage: document.getElementById('targetLanguage'),
-    requestFormat: document.getElementById('requestFormat'),
+    targetLangPickerEl: document.getElementById('targetLangPickerEl'),
+    targetLangTrigger: document.getElementById('targetLangTrigger'),
+    targetLangTriggerLabel: document.getElementById('targetLangTriggerLabel'),
+    targetLangMenu: document.getElementById('targetLangMenu'),
+    targetLangSearch: document.getElementById('targetLangSearch'),
+    targetLangList: document.getElementById('targetLangList'),
+    requestFormatPickerEl: document.getElementById('requestFormatPickerEl'),
+    requestFormatTrigger: document.getElementById('requestFormatTrigger'),
+    requestFormatTriggerLabel: document.getElementById('requestFormatTriggerLabel'),
+    requestFormatMenu: document.getElementById('requestFormatMenu'),
+    requestFormatList: document.getElementById('requestFormatList'),
     formatDescription: document.getElementById('formatDescription'),
+    promptEditor: document.getElementById('promptEditor'),
+    promptEditorHint: document.getElementById('promptEditorHint'),
     systemPrompt: document.getElementById('systemPrompt'),
     userPrompt: document.getElementById('userPrompt'),
     maxTokens: document.getElementById('maxTokens'),
@@ -96,14 +123,23 @@ const elements = {
     useStructuredOutput: document.getElementById('useStructuredOutput'),
     plainTextFallback: document.getElementById('plainTextFallback'),
     showGlow: document.getElementById('showGlow'),
-    cacheMode: document.getElementById('cacheMode'),
+    cacheModePickerEl: document.getElementById('cacheModePickerEl'),
+    cacheModeTrigger: document.getElementById('cacheModeTrigger'),
+    cacheModeTriggerLabel: document.getElementById('cacheModeTriggerLabel'),
+    cacheModeMenu: document.getElementById('cacheModeMenu'),
+    cacheModeList: document.getElementById('cacheModeList'),
     cacheBackendWarning: document.getElementById('cacheBackendWarning'),
     clearCache: document.getElementById('clearCache'),
     cacheCount: document.getElementById('cacheCount'),
     debugLogging: document.getElementById('debugLogging'),
     useGlossary: document.getElementById('useGlossary'),
+    glossarySettings: document.getElementById('glossarySettings'),
     // new glossary UI elements
-    glossaryTargetLang: document.getElementById('glossaryTargetLang'),
+    glossaryTargetLangPickerEl: document.getElementById('glossaryTargetLangPickerEl'),
+    glossaryTargetLangTrigger: document.getElementById('glossaryTargetLangTrigger'),
+    glossaryTargetLangTriggerLabel: document.getElementById('glossaryTargetLangTriggerLabel'),
+    glossaryTargetLangMenu: document.getElementById('glossaryTargetLangMenu'),
+    glossaryTargetLangList: document.getElementById('glossaryTargetLangList'),
     glossaryRows: document.getElementById('glossaryRows'),
     glossaryFilter: document.getElementById('glossaryFilter'),
     glossaryRowsNote: document.getElementById('glossaryRowsNote'),
@@ -120,15 +156,16 @@ const elements = {
     floatingButton: document.getElementById('floatingButton'),
     autoTranslatePages: document.getElementById('autoTranslatePages'),
     autoTranslateOptions: document.getElementById('autoTranslateOptions'),
-    neverLanguageSelect: document.getElementById('neverLanguageSelect'),
+    neverLanguagePickerEl: document.getElementById('neverLanguagePickerEl'),
+    neverLanguageTrigger: document.getElementById('neverLanguageTrigger'),
+    neverLanguageTriggerLabel: document.getElementById('neverLanguageTriggerLabel'),
+    neverLanguageMenu: document.getElementById('neverLanguageMenu'),
+    neverLanguagePickerList: document.getElementById('neverLanguagePickerList'),
     addNeverLanguage: document.getElementById('addNeverLanguage'),
     neverLanguageList: document.getElementById('neverLanguageList'),
     neverSiteInput: document.getElementById('neverSiteInput'),
     addNeverSite: document.getElementById('addNeverSite'),
     neverSiteList: document.getElementById('neverSiteList'),
-    customPromptsSection: document.getElementById('customPromptsSection'),
-    customSystem: document.getElementById('customSystem'),
-    customUser: document.getElementById('customUser'),
     translateGemmaHelp: document.getElementById('translateGemmaHelp'),
     copyTemplate: document.getElementById('copyTemplate'),
     saveSettings: document.getElementById('saveSettings'),
@@ -137,6 +174,539 @@ const elements = {
 };
 
 let currentSettings = { ...DEFAULT_SETTINGS };
+
+// ============================================================================
+// Shared dropdown picker: a searchable list with pinnable items. Mirrors the
+// popup's picker (popup.js) so the Model and Target Language controls here
+// look and behave the same as their popup counterparts.
+// ============================================================================
+const PIN_ICON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+
+function createPicker(config) {
+    const { els, getItems, getId, getName } = config;
+
+    return {
+        value: config.initialValue ?? '',
+        pinned: [],
+        open: false,
+        activeIndex: -1,
+        visibleIds: [],
+        onChange: null,       // (id) => void
+        onPinnedChange: null, // (pinnedArray) => void
+
+        init() {
+            els.trigger.addEventListener('click', () => this.toggle());
+            els.search.addEventListener('input', () => {
+                this.activeIndex = -1;
+                this.render();
+            });
+            els.search.addEventListener('keydown', (e) => this.handleKeydown(e));
+            document.addEventListener('click', (e) => {
+                if (this.open && !els.picker.contains(e.target)) this.close();
+            });
+        },
+
+        getValue() { return this.value; },
+
+        setValue(id) {
+            this.value = id;
+            els.label.textContent = config.labelFor(id);
+        },
+
+        setPinned(arr) {
+            const list = Array.isArray(arr) ? arr : [];
+            this.pinned = config.isValidId ? list.filter(config.isValidId) : [...list];
+        },
+
+        isPinned(id) { return this.pinned.includes(id); },
+
+        togglePin(id) {
+            this.pinned = this.isPinned(id)
+                ? this.pinned.filter(p => p !== id)
+                : [...this.pinned, id];
+            if (this.onPinnedChange) this.onPinnedChange([...this.pinned]);
+            this.render();
+        },
+
+        select(id) {
+            this.setValue(id);
+            this.close();
+            if (this.onChange) this.onChange(id);
+        },
+
+        toggle() { this.open ? this.close() : this.openMenu(); },
+
+        openMenu() {
+            this.open = true;
+            els.picker.classList.add('open');
+            els.menu.hidden = false;
+            els.trigger.setAttribute('aria-expanded', 'true');
+            els.search.value = '';
+            this.activeIndex = -1;
+            this.render();
+            els.search.focus();
+            const sel = els.list.querySelector('.lang-option.selected');
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        },
+
+        close() {
+            this.open = false;
+            els.picker.classList.remove('open');
+            els.menu.hidden = true;
+            els.trigger.setAttribute('aria-expanded', 'false');
+        },
+
+        render() {
+            const filter = els.search.value.trim().toLowerCase();
+            const match = (item) => !filter
+                || getName(item).toLowerCase().includes(filter)
+                || String(getId(item)).toLowerCase().includes(filter);
+
+            const pinnedSet = new Set(this.pinned);
+            const sorted = [...getItems()].sort((a, b) => getName(a).localeCompare(getName(b)));
+            const pinnedItems = sorted.filter(i => pinnedSet.has(getId(i)) && match(i));
+            const restItems = sorted.filter(i => !pinnedSet.has(getId(i)) && match(i));
+
+            const list = els.list;
+            list.innerHTML = '';
+            this.visibleIds = [];
+
+            if (!pinnedItems.length && !restItems.length) {
+                const empty = document.createElement('li');
+                empty.className = 'lang-empty';
+                empty.textContent = config.emptyText(filter);
+                list.appendChild(empty);
+                return;
+            }
+
+            if (pinnedItems.length) {
+                list.appendChild(this.makeGroupLabel('Pinned'));
+                pinnedItems.forEach(i => list.appendChild(this.makeOption(i, true)));
+                if (restItems.length) {
+                    const sep = document.createElement('li');
+                    sep.className = 'lang-separator';
+                    sep.setAttribute('aria-hidden', 'true');
+                    list.appendChild(sep);
+                    list.appendChild(this.makeGroupLabel(config.restGroupLabel));
+                }
+            }
+            restItems.forEach(i => list.appendChild(this.makeOption(i, false)));
+
+            this.updateActive();
+        },
+
+        makeGroupLabel(text) {
+            const li = document.createElement('li');
+            li.className = 'lang-group-label';
+            li.textContent = text;
+            li.setAttribute('aria-hidden', 'true');
+            return li;
+        },
+
+        makeOption(item, pinned) {
+            const id = getId(item);
+            const name = getName(item);
+            const li = document.createElement('li');
+            li.className = 'lang-option' + (pinned ? ' pinned' : '') + (id === this.value ? ' selected' : '');
+            li.setAttribute('role', 'option');
+            li.dataset.id = id;
+            if (id === this.value) li.setAttribute('aria-selected', 'true');
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'lang-option-name';
+            nameEl.textContent = name;
+            li.appendChild(nameEl);
+
+            if (config.decorateOption) config.decorateOption(li, item);
+
+            const pinBtn = document.createElement('button');
+            pinBtn.type = 'button';
+            pinBtn.className = 'lang-pin-btn';
+            pinBtn.innerHTML = PIN_ICON_SVG;
+            pinBtn.title = pinned ? `Unpin ${name}` : `Pin ${name}`;
+            pinBtn.setAttribute('aria-label', pinBtn.title);
+            pinBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.togglePin(id);
+            });
+            li.appendChild(pinBtn);
+
+            li.addEventListener('click', () => this.select(id));
+
+            const idx = this.visibleIds.length;
+            li.addEventListener('mousemove', () => {
+                if (this.activeIndex !== idx) { this.activeIndex = idx; this.updateActive(); }
+            });
+            this.visibleIds.push(id);
+            return li;
+        },
+
+        updateActive() {
+            const rows = els.list.querySelectorAll('.lang-option');
+            rows.forEach((row, i) => {
+                const active = i === this.activeIndex;
+                row.classList.toggle('active', active);
+                if (active) row.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        handleKeydown(e) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (this.visibleIds.length) {
+                    this.activeIndex = Math.min(this.activeIndex + 1, this.visibleIds.length - 1);
+                    this.updateActive();
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (this.visibleIds.length) {
+                    this.activeIndex = Math.max(this.activeIndex - 1, 0);
+                    this.updateActive();
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const idx = this.activeIndex >= 0 ? this.activeIndex : 0;
+                const id = this.visibleIds[idx];
+                if (id) this.select(id);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.close();
+                els.trigger.focus();
+            }
+        }
+    };
+}
+
+// ============================================================================
+// Lightweight dropdown for plain value/label selects (no search box, no pinning)
+// — a styled stand-in for <select> so every dropdown on this page looks and
+// behaves the same way. Options are computed live via getOptions() each time
+// the menu opens, so callers can change what's offered (e.g. a disabled entry)
+// without having to rebuild the picker.
+// ============================================================================
+function createSimpleSelect(config) {
+    const { els, getOptions } = config;
+
+    return {
+        value: config.initialValue ?? '',
+        open: false,
+        activeIndex: -1,
+        visibleValues: [],
+        onChange: null, // (value) => void
+
+        init() {
+            els.trigger.addEventListener('click', () => this.toggle());
+            els.trigger.addEventListener('keydown', (e) => this.handleKeydown(e));
+            document.addEventListener('click', (e) => {
+                if (this.open && !els.picker.contains(e.target)) this.close();
+            });
+        },
+
+        getValue() { return this.value; },
+
+        setValue(value) {
+            this.value = value;
+            const opt = (getOptions() || []).find(o => o.value === value);
+            els.label.textContent = opt ? opt.label : (config.placeholder || '');
+        },
+
+        select(value) {
+            this.setValue(value);
+            this.close();
+            els.trigger.focus();
+            if (this.onChange) this.onChange(value);
+        },
+
+        toggle() { this.open ? this.close() : this.openMenu(); },
+
+        openMenu() {
+            this.open = true;
+            els.picker.classList.add('open');
+            els.menu.hidden = false;
+            els.trigger.setAttribute('aria-expanded', 'true');
+            this.activeIndex = -1;
+            this.render();
+            const sel = els.list.querySelector('.lang-option.selected');
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        },
+
+        close() {
+            this.open = false;
+            els.picker.classList.remove('open');
+            els.menu.hidden = true;
+            els.trigger.setAttribute('aria-expanded', 'false');
+        },
+
+        render() {
+            const options = (getOptions() || []);
+            const list = els.list;
+            list.innerHTML = '';
+            this.visibleValues = [];
+            options.forEach(opt => {
+                const disabled = !!opt.disabled;
+                const li = document.createElement('li');
+                li.className = 'lang-option' + (opt.value === this.value ? ' selected' : '') + (disabled ? ' disabled' : '');
+                li.setAttribute('role', 'option');
+                li.dataset.id = opt.value;
+                if (opt.value === this.value) li.setAttribute('aria-selected', 'true');
+                if (disabled) li.setAttribute('aria-disabled', 'true');
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'lang-option-name';
+                nameEl.textContent = opt.label;
+                li.appendChild(nameEl);
+
+                if (!disabled) {
+                    li.addEventListener('click', () => this.select(opt.value));
+                    const idx = this.visibleValues.length;
+                    li.addEventListener('mousemove', () => {
+                        if (this.activeIndex !== idx) { this.activeIndex = idx; this.updateActive(); }
+                    });
+                    this.visibleValues.push(opt.value);
+                }
+                list.appendChild(li);
+            });
+            this.updateActive();
+        },
+
+        updateActive() {
+            const rows = els.list.querySelectorAll('.lang-option:not(.disabled)');
+            rows.forEach((row, i) => {
+                const active = i === this.activeIndex;
+                row.classList.toggle('active', active);
+                if (active) row.scrollIntoView({ block: 'nearest' });
+            });
+        },
+
+        handleKeydown(e) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (!this.open) { this.openMenu(); return; }
+                if (this.visibleValues.length) {
+                    this.activeIndex = Math.min(this.activeIndex + 1, this.visibleValues.length - 1);
+                    this.updateActive();
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (this.open && this.visibleValues.length) {
+                    this.activeIndex = Math.max(this.activeIndex - 1, 0);
+                    this.updateActive();
+                }
+            } else if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!this.open) { this.openMenu(); return; }
+                const idx = this.activeIndex >= 0 ? this.activeIndex : 0;
+                const value = this.visibleValues[idx];
+                if (value !== undefined) this.select(value);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.close();
+            }
+        }
+    };
+}
+
+// Full language list as { value, label } options, sorted by display name —
+// shared by every simple-select that offers a language choice.
+function sortedLanguageOptions() {
+    return Object.entries(LANGUAGES)
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([code, name]) => ({ value: code, label: name }));
+}
+
+// Target-language picker: items are [code, name] entries from LANGUAGES.
+const langPicker = createPicker({
+    els: {
+        picker: elements.targetLangPickerEl,
+        trigger: elements.targetLangTrigger,
+        label: elements.targetLangTriggerLabel,
+        menu: elements.targetLangMenu,
+        search: elements.targetLangSearch,
+        list: elements.targetLangList,
+    },
+    getItems: () => Object.entries(LANGUAGES),
+    getId: (entry) => entry[0],
+    getName: (entry) => entry[1],
+    restGroupLabel: 'All languages',
+    emptyText: () => 'No languages match your search',
+    labelFor: (code) => LANGUAGES[code] || code,
+    isValidId: (code) => !!LANGUAGES[code],
+    initialValue: 'en',
+});
+
+// Model picker: items are { id, name, provider } objects loaded from providers.
+const modelPicker = createPicker({
+    els: {
+        picker: elements.modelPickerEl,
+        trigger: elements.modelTrigger,
+        label: elements.modelTriggerLabel,
+        menu: elements.modelMenu,
+        search: elements.modelSearch,
+        list: elements.modelList,
+    },
+    getItems: () => modelPicker.allModels,
+    getId: (m) => m.id,
+    getName: (m) => m.name,
+    restGroupLabel: 'All models',
+    emptyText: () => modelPicker.allModels.length === 0 ? 'No models available' : 'No models match your search',
+    labelFor: (id) => {
+        const m = modelPicker.allModels.find(x => x.id === id);
+        return m ? m.name : (id || 'Select a model');
+    },
+    decorateOption: (li, m) => {
+        const badge = document.createElement('span');
+        badge.className = `model-provider-badge model-provider-badge--${m.provider}`;
+        badge.textContent = m.provider;
+        li.appendChild(badge);
+    },
+});
+
+modelPicker.allModels = [];
+modelPicker.setModels = function (models) {
+    this.allModels = models;
+    const ids = new Set(models.map(m => m.id));
+    this.pinned = this.pinned.filter(id => ids.has(id));
+};
+
+function initTargetLangPicker() {
+    langPicker.onChange = (code) => {
+        currentSettings.targetLanguage = code;
+    };
+    langPicker.onPinnedChange = (pinned) => {
+        currentSettings.pinnedLanguages = pinned;
+        saveCurrentSettings();
+    };
+    langPicker.init();
+}
+
+function initModelPicker() {
+    modelPicker.onChange = (id) => {
+        currentSettings.selectedModel = id;
+        updateFormatDescription(requestFormatPicker.getValue());
+        updateVisibility();
+    };
+    modelPicker.onPinnedChange = (pinned) => {
+        currentSettings.pinnedModels = pinned;
+        saveCurrentSettings();
+    };
+    modelPicker.init();
+}
+
+// ============================================================================
+// Simple-select pickers: provider, source language, request format, cache
+// mode, glossary target language, and the "never auto-translate" language
+// combo. None of these need search or pinning, just a styled stand-in for
+// the plain <select> they used to be.
+// ============================================================================
+
+const PROVIDER_OPTIONS = [
+    { value: 'auto', label: 'Auto-detect' },
+    { value: 'ollama', label: 'Ollama' },
+    { value: 'lmstudio', label: 'LM Studio / OpenAI-compatible' },
+];
+
+const providerPicker = createSimpleSelect({
+    els: {
+        picker: elements.providerPickerEl,
+        trigger: elements.providerTrigger,
+        label: elements.providerTriggerLabel,
+        menu: elements.providerMenu,
+        list: elements.providerList,
+    },
+    getOptions: () => PROVIDER_OPTIONS,
+    initialValue: 'auto',
+});
+
+const sourceLanguagePicker = createSimpleSelect({
+    els: {
+        picker: elements.sourceLanguagePickerEl,
+        trigger: elements.sourceLanguageTrigger,
+        label: elements.sourceLanguageTriggerLabel,
+        menu: elements.sourceLanguageMenu,
+        list: elements.sourceLanguageList,
+    },
+    getOptions: () => [{ value: 'auto', label: 'Auto-detect from page' }, ...sortedLanguageOptions()],
+    initialValue: 'auto',
+});
+
+const REQUEST_FORMAT_OPTIONS = [
+    { value: 'auto', label: 'Auto (detect from model)' },
+    { value: 'default', label: 'Default (JSON output)' },
+    { value: 'translategemma', label: 'TranslateGemma' },
+    { value: 'hunyuan', label: 'Hunyuan-MT' },
+    { value: 'simple', label: 'Simple (Line-by-line)' },
+    { value: 'custom', label: 'Custom' },
+];
+
+const requestFormatPicker = createSimpleSelect({
+    els: {
+        picker: elements.requestFormatPickerEl,
+        trigger: elements.requestFormatTrigger,
+        label: elements.requestFormatTriggerLabel,
+        menu: elements.requestFormatMenu,
+        list: elements.requestFormatList,
+    },
+    getOptions: () => REQUEST_FORMAT_OPTIONS,
+    initialValue: 'auto',
+});
+
+// Greyed out (not removed) when the browser can't persist IndexedDB — see refreshCacheBackend().
+let cachePersistentAvailable = true;
+
+const cacheModePicker = createSimpleSelect({
+    els: {
+        picker: elements.cacheModePickerEl,
+        trigger: elements.cacheModeTrigger,
+        label: elements.cacheModeTriggerLabel,
+        menu: elements.cacheModeMenu,
+        list: elements.cacheModeList,
+    },
+    getOptions: () => [
+        { value: 'off', label: "Don't cache" },
+        { value: 'session', label: 'Until I close the browser' },
+        { value: 'persistent', label: 'Keep across sessions', disabled: !cachePersistentAvailable },
+    ],
+    initialValue: 'off',
+});
+
+const glossaryTargetLangPicker = createSimpleSelect({
+    els: {
+        picker: elements.glossaryTargetLangPickerEl,
+        trigger: elements.glossaryTargetLangTrigger,
+        label: elements.glossaryTargetLangTriggerLabel,
+        menu: elements.glossaryTargetLangMenu,
+        list: elements.glossaryTargetLangList,
+    },
+    getOptions: () => [{ value: '', label: 'Any language (always apply)' }, ...sortedLanguageOptions()],
+    initialValue: '',
+});
+
+const neverLanguagePicker = createSimpleSelect({
+    els: {
+        picker: elements.neverLanguagePickerEl,
+        trigger: elements.neverLanguageTrigger,
+        label: elements.neverLanguageTriggerLabel,
+        menu: elements.neverLanguageMenu,
+        list: elements.neverLanguagePickerList,
+    },
+    getOptions: () => sortedLanguageOptions(),
+    initialValue: (sortedLanguageOptions()[0] || {}).value || '',
+});
+
+function initSimpleSelects() {
+    providerPicker.init();
+    sourceLanguagePicker.init();
+    requestFormatPicker.onChange = (value) => {
+        updateFormatDescription(value);
+        updateVisibility();
+    };
+    requestFormatPicker.init();
+    cacheModePicker.init();
+    glossaryTargetLangPicker.init();
+    neverLanguagePicker.init();
+    // Paint the trigger label for the default selection picked at construction time.
+    neverLanguagePicker.setValue(neverLanguagePicker.getValue());
+}
 
 // Highlight variables in text
 function highlightVariables(text) {
@@ -196,7 +766,9 @@ function initPromptEditors() {
 
 // Initialize
 async function init() {
-    populateLanguageDropdowns();
+    initTargetLangPicker();
+    initModelPicker();
+    initSimpleSelects();
     await loadSettings();
     applySettingsToUI();
     initPromptEditors(); // Initialize editors
@@ -218,19 +790,18 @@ async function init() {
 // Grey out "Keep across sessions" when the browser blocks IndexedDB (e.g. hardened
 // Firefox forks like Mullvad/Tor), since persistence can't work there.
 async function refreshCacheBackend() {
-    if (!elements.cacheMode) return;
     let persistent = true;
     try {
         const res = await browserAPI.runtime.sendMessage({ type: 'CACHE_BACKEND' });
         persistent = !(res && res.persistent === false);
     } catch (e) { /* assume available on error */ }
 
-    const opt = elements.cacheMode.querySelector('option[value="persistent"]');
-    if (opt) opt.disabled = !persistent;
+    cachePersistentAvailable = persistent;
     if (elements.cacheBackendWarning) elements.cacheBackendWarning.hidden = persistent;
     // If persistence isn't available but it was the saved choice, fall back to session.
-    if (!persistent && elements.cacheMode.value === 'persistent') {
-        elements.cacheMode.value = 'session';
+    if (!persistent && cacheModePicker.getValue() === 'persistent') {
+        cacheModePicker.setValue('session');
+        currentSettings.cacheMode = 'session';
     }
 }
 
@@ -247,86 +818,36 @@ async function refreshCacheCount() {
 
 // Load available models from providers
 async function loadModels() {
-    if (!elements.modelSelect) return;
+    if (!elements.modelTrigger) return;
 
-    elements.modelSelect.innerHTML = '<option value="">Loading models...</option>';
-    elements.modelSelect.disabled = true;
+    elements.modelTrigger.disabled = true;
+    elements.modelTriggerLabel.textContent = 'Loading models...';
     try {
         const response = await browserAPI.runtime.sendMessage({ type: 'LIST_MODELS' });
         const models = response.models || [];
 
-        elements.modelSelect.innerHTML = '';
+        modelPicker.setModels(models);
+        modelPicker.setPinned(currentSettings.pinnedModels || []);
 
         if (models.length === 0) {
-            elements.modelSelect.innerHTML = '<option value="">No models found</option>';
+            elements.modelTriggerLabel.textContent = 'No models found';
         } else {
-            for (const model of models) {
-                const option = document.createElement('option');
-                option.value = model.id;
-                option.textContent = `${model.name} (${model.provider})`;
-                option.dataset.provider = model.provider;
-                elements.modelSelect.appendChild(option);
-            }
-
-            // Select current model if set
-            if (currentSettings.selectedModel) {
-                elements.modelSelect.value = currentSettings.selectedModel;
-            }
+            // Select current model if still available, else the first one
+            const targetId = currentSettings.selectedModel && models.some(m => m.id === currentSettings.selectedModel)
+                ? currentSettings.selectedModel
+                : models[0].id;
+            modelPicker.setValue(targetId);
+            currentSettings.selectedModel = targetId;
 
             // Refresh the "Auto → detected format" hint for the selected model
-            updateFormatDescription(elements.requestFormat.value);
+            updateFormatDescription(requestFormatPicker.getValue());
             updateVisibility();
         }
     } catch (e) {
         console.error('Failed to load models:', e);
-        elements.modelSelect.innerHTML = '<option value="">Error loading models</option>';
+        elements.modelTriggerLabel.textContent = 'Error loading models';
     } finally {
-        elements.modelSelect.disabled = false;
-    }
-}
-
-// Populate language dropdowns from LANGUAGES object
-function populateLanguageDropdowns() {
-    const sortedLangs = Object.entries(LANGUAGES).sort((a, b) => a[1].localeCompare(b[1]));
-
-    // Source language dropdown - add "auto" option first
-    elements.sourceLanguage.innerHTML = '<option value="auto">Auto-detect from page</option>';
-    for (const [code, name] of sortedLangs) {
-        const option = document.createElement('option');
-        option.value = code;
-        option.textContent = name;
-        elements.sourceLanguage.appendChild(option);
-    }
-
-    // Target language dropdown
-    elements.targetLanguage.innerHTML = '';
-    for (const [code, name] of sortedLangs) {
-        const option = document.createElement('option');
-        option.value = code;
-        option.textContent = name;
-        elements.targetLanguage.appendChild(option);
-    }
-
-    // Glossary target language dropdown
-    if (elements.glossaryTargetLang) {
-        // Keep the first "Any language" option already in the HTML
-        for (const [code, name] of sortedLangs) {
-            const option = document.createElement('option');
-            option.value = code;
-            option.textContent = name;
-            elements.glossaryTargetLang.appendChild(option);
-        }
-    }
-
-    // "Never auto-translate" language picker
-    if (elements.neverLanguageSelect) {
-        elements.neverLanguageSelect.innerHTML = '';
-        for (const [code, name] of sortedLangs) {
-            const option = document.createElement('option');
-            option.value = code;
-            option.textContent = name;
-            elements.neverLanguageSelect.appendChild(option);
-        }
+        elements.modelTrigger.disabled = false;
     }
 }
 
@@ -344,12 +865,13 @@ async function loadSettings() {
 
 // Apply settings to UI
 function applySettingsToUI() {
-    elements.providerSelect.value = currentSettings.provider;
+    providerPicker.setValue(currentSettings.provider);
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
-    elements.sourceLanguage.value = currentSettings.sourceLanguage || 'auto';
-    elements.targetLanguage.value = currentSettings.targetLanguage;
-    elements.requestFormat.value = currentSettings.requestFormat;
+    sourceLanguagePicker.setValue(currentSettings.sourceLanguage || 'auto');
+    langPicker.setPinned(currentSettings.pinnedLanguages || []);
+    langPicker.setValue(currentSettings.targetLanguage);
+    requestFormatPicker.setValue(currentSettings.requestFormat);
     elements.maxTokens.value = currentSettings.maxTokensPerBatch;
     elements.maxItems.value = currentSettings.maxItemsPerBatch || 8;
     elements.temperature.value = currentSettings.temperature;
@@ -364,16 +886,15 @@ function applySettingsToUI() {
     elements.useStructuredOutput.checked = currentSettings.useStructuredOutput;
     if (elements.plainTextFallback) elements.plainTextFallback.checked = currentSettings.plainTextFallback !== false;
     elements.showGlow.checked = currentSettings.showGlow !== false;
-    if (elements.cacheMode) elements.cacheMode.value = currentSettings.cacheMode || 'off';
+    cacheModePicker.setValue(currentSettings.cacheMode || 'off');
     elements.debugLogging.checked = !!currentSettings.debug;
     if (elements.useGlossary) elements.useGlossary.checked = currentSettings.useGlossary !== false;
+    updateGlossaryVisibility();
     elements.floatingButton.checked = !!currentSettings.floatingButton;
     if (elements.autoTranslatePages) {
         elements.autoTranslatePages.checked = !!currentSettings.autoTranslatePages;
     }
     renderAutoTranslateLists();
-    elements.customSystem.value = currentSettings.customSystemPrompt || '';
-    elements.customUser.value = currentSettings.customUserPromptTemplate || '';
 
     // Update format description
     updateFormatDescription(currentSettings.requestFormat);
@@ -385,43 +906,68 @@ function applySettingsToUI() {
 // The effective format = the explicit choice, or (for 'auto') the one detected
 // from the selected model. resolveRequestFormat/detectRequestFormat come from languages.js.
 function getEffectiveFormat() {
-    const modelId = elements.modelSelect?.value || currentSettings.selectedModel;
-    return resolveRequestFormat({ requestFormat: elements.requestFormat.value }, modelId);
+    const modelId = modelPicker.getValue() || currentSettings.selectedModel;
+    return resolveRequestFormat({ requestFormat: requestFormatPicker.getValue() }, modelId);
 }
 
-// Update format description and prompt editor. Shows the *effective* template so
-// the user can see what 'auto' resolved to for the current model.
-function updateFormatDescription(format) {
-    const effective = format === 'auto' ? getEffectiveFormat() : format;
+// In-memory drafts of per-format prompt edits, keyed by format, plus which
+// format the editor is currently showing. Edits aren't written into
+// currentSettings.customPrompts until Save — but switching formats before
+// saving would otherwise blow away whatever was just typed, since the same
+// pair of textareas is reused for every format. Capturing into promptDrafts
+// on every switch (and reading it back if the user returns) avoids that.
+let promptDrafts = {};
+let activePromptFormat = null;
 
+// Update format description and prompt editor. 'auto' has no single template —
+// it resolves to a concrete format per model — so the editor is hidden while
+// it's selected. For any concrete format, shows (in priority order) an
+// in-progress draft, then a saved override, then the built-in template.
+function updateFormatDescription(format) {
     let desc = FORMAT_DESCRIPTIONS[format] || '';
-    if (format === 'auto' && (elements.modelSelect?.value || currentSettings.selectedModel)) {
-        desc += ` Detected for this model: ${effective}.`;
+    if (format === 'auto' && (modelPicker.getValue() || currentSettings.selectedModel)) {
+        desc += ` Detected for this model: ${getEffectiveFormat()}.`;
     }
     elements.formatDescription.textContent = desc;
 
-    // Populate prompt editor with the effective format's template
-    const template = PROMPT_TEMPLATES[effective] || PROMPT_TEMPLATES.default;
-    if (template && elements.systemPrompt && elements.userPrompt) {
-        if (effective === 'custom') {
-            elements.systemPrompt.value = currentSettings.customSystemPrompt || '';
-            elements.userPrompt.value = currentSettings.customUserPromptTemplate || '';
-        } else {
-            elements.systemPrompt.value = template.system || '';
-            elements.userPrompt.value = template.user || '';
-        }
+    if (elements.promptEditor) elements.promptEditor.hidden = (format === 'auto');
+    if (format === 'auto') {
+        activePromptFormat = 'auto';
+        return;
+    }
+
+    // Already showing this format — nothing to (re)populate, and doing so
+    // anyway would stomp an in-progress edit on every unrelated refresh
+    // (e.g. picking a different model while the editor is open).
+    if (activePromptFormat === format) return;
+
+    if (activePromptFormat && activePromptFormat !== 'auto' && elements.systemPrompt && elements.userPrompt) {
+        promptDrafts[activePromptFormat] = {
+            system: elements.systemPrompt.value,
+            user: elements.userPrompt.value,
+        };
+    }
+
+    if (elements.systemPrompt && elements.userPrompt) {
+        const draft = promptDrafts[format];
+        const override = currentSettings.customPrompts && currentSettings.customPrompts[format];
+        const builtin = PROMPT_TEMPLATES[format] || PROMPT_TEMPLATES.default;
+        const source = draft || override || builtin;
+        elements.systemPrompt.value = source.system || '';
+        elements.userPrompt.value = source.user || '';
         elements.systemPrompt.dispatchEvent(new Event('input'));
         elements.userPrompt.dispatchEvent(new Event('input'));
     }
+    if (elements.promptEditorHint) {
+        elements.promptEditorHint.textContent =
+            `Saved edits are used whenever "${format}" is active, including when Auto detects it.`;
+    }
+    activePromptFormat = format;
 }
 
 // Update visibility of sections based on the effective format.
 function updateVisibility() {
-    const selected = elements.requestFormat.value;
     const effective = getEffectiveFormat();
-
-    // Custom prompts section — only when the user explicitly chose 'custom'
-    elements.customPromptsSection.hidden = selected !== 'custom';
 
     // TranslateGemma help — when the effective format is translategemma
     elements.translateGemmaHelp.hidden = effective !== 'translategemma';
@@ -437,15 +983,27 @@ function updateVisibility() {
 
 // Save current settings
 async function saveCurrentSettings() {
+    // Whatever's currently in the editor belongs to activePromptFormat and hasn't
+    // been captured into promptDrafts yet unless the user already switched away
+    // from it (updateFormatDescription does that capture on every switch).
+    if (activePromptFormat && activePromptFormat !== 'auto' && elements.systemPrompt && elements.userPrompt) {
+        promptDrafts[activePromptFormat] = {
+            system: elements.systemPrompt.value,
+            user: elements.userPrompt.value,
+        };
+    }
+
     currentSettings = {
         ...currentSettings,
-        provider: elements.providerSelect.value,
+        provider: providerPicker.getValue(),
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
-        selectedModel: elements.modelSelect?.value || currentSettings.selectedModel,
-        sourceLanguage: elements.sourceLanguage.value,
-        targetLanguage: elements.targetLanguage.value,
-        requestFormat: elements.requestFormat.value,
+        selectedModel: modelPicker.getValue() || currentSettings.selectedModel,
+        pinnedModels: [...modelPicker.pinned],
+        sourceLanguage: sourceLanguagePicker.getValue(),
+        targetLanguage: langPicker.getValue(),
+        pinnedLanguages: [...langPicker.pinned],
+        requestFormat: requestFormatPicker.getValue(),
         maxTokensPerBatch: parseInt(elements.maxTokens.value) || 2000,
         maxItemsPerBatch: parseInt(elements.maxItems.value) || 8,
         maxConcurrentRequests: parseInt(elements.maxConcurrent?.value) || 4,
@@ -453,14 +1011,12 @@ async function saveCurrentSettings() {
         useStructuredOutput: elements.useStructuredOutput.checked,
         plainTextFallback: elements.plainTextFallback ? elements.plainTextFallback.checked : true,
         showGlow: elements.showGlow.checked,
-        cacheMode: elements.cacheMode ? elements.cacheMode.value : 'off',
+        cacheMode: cacheModePicker.getValue() || 'off',
         debug: elements.debugLogging.checked,
-        useGlossary: elements.useGlossary ? elements.useGlossary.checked : true,
+        useGlossary: elements.useGlossary ? elements.useGlossary.checked : false,
         floatingButton: elements.floatingButton.checked,
-        // Save custom prompts from the new prompt editor
-        customSystemPrompt: elements.systemPrompt?.value || elements.customSystem?.value || '',
-        customUserPromptTemplate: elements.userPrompt?.value || elements.customUser?.value || '',
-        useAdvanced: elements.requestFormat.value === 'custom'
+        // Merge in this session's prompt edits, keyed by the format each one belongs to.
+        customPrompts: { ...currentSettings.customPrompts, ...promptDrafts }
     };
 
     await browserAPI.runtime.sendMessage({
@@ -591,17 +1147,26 @@ function updateGlossaryRowsNote(matchCount, shownCount, filtered) {
     const total = glossaryEditorRows.length;
 
     if (!total) {
-        note.textContent = 'No terms yet — add one below or import a TSV.';
+        note.textContent = 'No terms yet. Add one below or import a TSV.';
     } else if (filtered && shownCount < matchCount) {
         note.textContent = `Showing ${shownCount} of ${matchCount.toLocaleString()} matches (${total.toLocaleString()} terms total). Narrow the filter to see the rest.`;
     } else if (filtered) {
         note.textContent = `${matchCount.toLocaleString()} of ${total.toLocaleString()} terms match.`;
     } else if (shownCount < total) {
-        note.textContent = `Showing the first ${shownCount} of ${total.toLocaleString()} terms. Use the filter to reach the others — all ${total.toLocaleString()} are kept when you save.`;
+        note.textContent = `Showing the first ${shownCount} of ${total.toLocaleString()} terms. Use the filter to reach the others; all ${total.toLocaleString()} are kept when you save.`;
     } else {
         note.textContent = `${total.toLocaleString()} term${total === 1 ? '' : 's'}.`;
     }
     note.hidden = false;
+}
+
+// Show/hide the glossary editor and its controls — kept collapsed to just the
+// toggle when the feature is off so it doesn't clutter the page for users who
+// don't use it.
+function updateGlossaryVisibility() {
+    if (elements.glossarySettings) {
+        elements.glossarySettings.hidden = !(elements.useGlossary && elements.useGlossary.checked);
+    }
 }
 
 // Update the badge showing term count above the table.
@@ -631,7 +1196,7 @@ async function refreshGlossaryStatus() {
         renderGlossaryRows();
         updateGlossaryBadge(0);
         if (elements.glossaryRowsNote) {
-            elements.glossaryRowsNote.textContent = 'Could not load the glossary — reload this page to try again.';
+            elements.glossaryRowsNote.textContent = 'Could not load the glossary. Reload this page to try again.';
         }
         markGlossaryClean();
         return;
@@ -643,9 +1208,7 @@ async function refreshGlossaryStatus() {
     renderGlossaryRows();
     updateGlossaryBadge(glossaryEditorRows.length);
     // Sync the target language dropdown
-    if (elements.glossaryTargetLang) {
-        elements.glossaryTargetLang.value = glossaryEditorTargetLang || '';
-    }
+    glossaryTargetLangPicker.setValue(glossaryEditorTargetLang || '');
     markGlossaryClean();
 }
 
@@ -680,20 +1243,8 @@ function setupEventListeners() {
         });
     }
 
-    // Request format change
-    elements.requestFormat.addEventListener('change', (e) => {
-        updateFormatDescription(e.target.value);
-        updateVisibility();
-    });
-
-    // Model selection
-    if (elements.modelSelect) {
-        elements.modelSelect.addEventListener('change', () => {
-            currentSettings.selectedModel = elements.modelSelect.value;
-            updateFormatDescription(elements.requestFormat.value);
-            updateVisibility(); // Refresh detected-format hint + TranslateGemma help
-        });
-    }
+    // (Request format selection is handled by requestFormatPicker.onChange.)
+    // (Model selection is handled by modelPicker.onChange.)
 
     // Refresh models
     if (elements.refreshModels) {
@@ -713,7 +1264,7 @@ function setupEventListeners() {
         ]);
         await saveCurrentSettings();
         if (!granted) {
-            showToast('Saved, but permission for the custom server was denied — remote models won\'t load until you allow it.', 'error', 5000);
+            showToast('Saved, but permission for the custom server was denied. Remote models won\'t load until you allow it.', 'error', 5000);
         } else {
             showToast('Settings saved!');
         }
@@ -722,6 +1273,8 @@ function setupEventListeners() {
     // Reset settings
     elements.resetSettings.addEventListener('click', async () => {
         currentSettings = { ...DEFAULT_SETTINGS };
+        promptDrafts = {};
+        activePromptFormat = null;
         await browserAPI.runtime.sendMessage({
             type: 'SAVE_SETTINGS',
             settings: currentSettings
@@ -742,6 +1295,11 @@ function setupEventListeners() {
                 showToast('Failed to clear cache', 'error');
             }
         });
+    }
+
+    // Glossary: collapse/expand the editor immediately when toggled
+    if (elements.useGlossary) {
+        elements.useGlossary.addEventListener('change', updateGlossaryVisibility);
     }
 
     // Glossary: filter the visible rows
@@ -788,7 +1346,7 @@ function setupEventListeners() {
     if (elements.saveGlossary) {
         elements.saveGlossary.addEventListener('click', async () => {
             if (!glossaryEditorLoaded) {
-                showToast('Glossary not loaded — reload the page before saving', 'error');
+                showToast('Glossary not loaded. Reload the page before saving', 'error');
                 return;
             }
             const entries = glossaryEditorRows
@@ -798,7 +1356,7 @@ function setupEventListeners() {
             const bySource = new Map(entries);
             const deduped = [...bySource.entries()];
             // Read target language from the dropdown
-            const targetLang = elements.glossaryTargetLang ? elements.glossaryTargetLang.value : glossaryEditorTargetLang;
+            const targetLang = glossaryTargetLangPicker.getValue();
             const res = await browserAPI.runtime.sendMessage({
                 type: 'SAVE_GLOSSARY',
                 entries: deduped,
@@ -836,7 +1394,7 @@ function setupEventListeners() {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
             if (!glossaryEditorLoaded) {
-                showToast('Glossary not loaded — reload the page before importing', 'error');
+                showToast('Glossary not loaded. Reload the page before importing', 'error');
                 e.target.value = '';
                 return;
             }
@@ -855,7 +1413,7 @@ function setupEventListeners() {
                 renderGlossaryRows();
                 updateGlossaryBadge(glossaryEditorRows.length);
                 markGlossaryDirty();
-                showToast(`Imported ${entries.length} terms — click Save to apply`);
+                showToast(`Imported ${entries.length} terms. Click Save to apply`);
             } catch (err) {
                 showToast('Failed to read file', 'error');
             } finally {
@@ -1082,11 +1640,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const ok = await applyAllSitesFeature('floatingButton', enabled);
         if (!ok) {
             elements.floatingButton.checked = false;
-            showToast('Permission denied — floating button not enabled', 'error');
+            showToast('Permission denied. Floating button not enabled', 'error');
             return;
         }
         showToast(enabled
-            ? 'Floating button enabled — reload pages to activate'
+            ? 'Floating button enabled. Reload pages to activate'
             : 'Floating button disabled');
     });
 
@@ -1096,19 +1654,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const ok = await applyAllSitesFeature('autoTranslatePages', enabled);
             if (!ok) {
                 elements.autoTranslatePages.checked = false;
-                showToast('Permission denied — auto-translate not enabled', 'error');
+                showToast('Permission denied. Auto-translate not enabled', 'error');
                 return;
             }
             renderAutoTranslateLists();
             showToast(enabled
-                ? 'Auto-translate enabled — reload pages to activate'
+                ? 'Auto-translate enabled. Reload pages to activate'
                 : 'Auto-translate disabled');
         });
     }
 
     if (elements.addNeverLanguage) {
         elements.addNeverLanguage.addEventListener('click', () => {
-            const code = elements.neverLanguageSelect.value;
+            const code = neverLanguagePicker.getValue();
             if (!code) return;
             const langs = Array.isArray(currentSettings.autoTranslateNeverLanguages)
                 ? currentSettings.autoTranslateNeverLanguages

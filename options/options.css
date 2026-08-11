@@ -54,6 +54,14 @@
     padding: 0;
 }
 
+/* Author-origin rules like `.lang-picker-menu { display: flex; }` otherwise beat
+   the UA stylesheet's `[hidden] { display: none }` regardless of specificity,
+   since author styles always win over UA styles. Without this, every dropdown
+   menu below stays visible even while its `hidden` attribute is set. */
+[hidden] {
+    display: none !important;
+}
+
 body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background: var(--bg-primary);
@@ -97,8 +105,11 @@ body {
 }
 
 .sidebar-logo {
-    font-size: 22px;
-    line-height: 1;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 6px;
+    flex-shrink: 0;
 }
 
 .sidebar-title {
@@ -166,9 +177,26 @@ body {
    ============================================================ */
 .content {
     flex: 1;
-    padding: 32px 40px;
-    max-width: 960px;
+    min-height: 0; /* flex items default to a content-based min-height, which would
+                       otherwise override the explicit height below and defeat both
+                       the internal scroll and the sticky footer inside it */
+    height: 100vh;
     overflow-y: auto;
+    /* No max-width/padding here — this element owns the scrollbar, so it must
+       span the full remaining width for the scrollbar to sit flush against the
+       window edge instead of floating wherever a capped inner width happened to end. */
+    display: flex;
+    flex-direction: column;
+}
+
+.content-inner {
+    /* flex-basis:auto sizes to content; flex-grow:1 stretches to fill the 100vh
+       column when content is short, so the footer below lands at the true
+       bottom of the viewport instead of floating right after the last section. */
+    flex: 1 0 auto;
+    width: 100%;
+    max-width: 960px;
+    padding: 32px 40px;
 }
 
 /* ============================================================
@@ -256,6 +284,18 @@ textarea:focus {
     box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+/* Hide the native up/down spinner — the fields are narrow and it visually
+   clashes with the styled inputs/pickers around them. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
 textarea {
     font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
     font-size: 12px;
@@ -303,6 +343,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .select-with-btn select { flex: 1; }
+.select-with-btn .lang-picker { flex: 1; }
 
 .icon-btn {
     padding: 7px 11px;
@@ -321,6 +362,225 @@ input[type="range"]::-webkit-slider-thumb:hover {
     background: var(--accent);
     color: var(--bg-primary);
     border-color: var(--accent);
+}
+
+/* ============================================================
+   Language/Model picker (searchable, pinnable dropdown — mirrors
+   the popup's picker so both surfaces feel the same)
+   ============================================================ */
+.lang-picker {
+    position: relative;
+}
+
+.lang-picker-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: var(--transition);
+}
+
+.lang-picker-trigger:hover {
+    border-color: var(--accent);
+}
+
+.lang-picker.open .lang-picker-trigger {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.lang-picker-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lang-picker-caret {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    transition: transform 0.15s ease;
+}
+
+.lang-picker.open .lang-picker-caret {
+    transform: rotate(180deg);
+}
+
+.lang-picker-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    background: var(--bg-secondary);
+    border: 1px solid var(--bg3);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.lang-picker-search-wrap {
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.lang-picker-search {
+    width: 100%;
+    padding: 6px 9px;
+    font-size: 12px;
+}
+
+.lang-picker-list {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.lang-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 8px 7px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.lang-option:hover,
+.lang-option.active {
+    background: var(--bg-tertiary);
+}
+
+.lang-option.selected {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.lang-option.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.lang-option.disabled:hover {
+    background: none;
+}
+
+.lang-option-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lang-pin-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.lang-pin-btn svg {
+    width: 15px;
+    height: 15px;
+}
+
+.lang-option:hover .lang-pin-btn,
+.lang-option.active .lang-pin-btn,
+.lang-pin-btn:focus-visible {
+    opacity: 1;
+}
+
+.lang-pin-btn:hover {
+    background: var(--bg2);
+    color: var(--accent);
+}
+
+.lang-option.pinned .lang-pin-btn {
+    opacity: 1;
+    color: var(--accent);
+}
+
+.lang-option.pinned .lang-pin-btn svg {
+    fill: var(--accent);
+}
+
+.lang-group-label {
+    padding: 6px 10px 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.lang-separator {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--border);
+    list-style: none;
+}
+
+.lang-empty {
+    padding: 12px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    cursor: default;
+}
+
+/* Model picker: provider badge shown on each model row */
+.model-provider-badge {
+    flex-shrink: 0;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 5px;
+    border-radius: 3px;
+    opacity: 0.9;
+    margin-right: 2px;
+}
+
+.model-provider-badge--ollama {
+    background: rgba(131, 192, 146, 0.12);
+    color: var(--aqua);
+    border: 1px solid rgba(131, 192, 146, 0.3);
+}
+
+.model-provider-badge--lmstudio {
+    background: rgba(214, 153, 182, 0.12);
+    color: var(--purple);
+    border: 1px solid rgba(214, 153, 182, 0.3);
+}
+
+.model-picker-trigger:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
 }
 
 /* ============================================================
@@ -518,20 +778,52 @@ input:checked + .slider::before {
    Cache
    ============================================================ */
 .cache-actions {
-    justify-content: flex-end;
-    align-self: end;
+    /* Keep label+button top-aligned and content-sized, matching the
+       "Cache translations" column instead of stretching full width and
+       sinking to the bottom of the (taller) grid row. */
+    align-items: flex-start;
+}
+
+/* ============================================================
+   Subsection (a smaller section folded inside a bigger one, e.g.
+   Glossary living inside Advanced Features)
+   ============================================================ */
+.subsection {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+
+/* When a subsection is the first thing in a section, the section header's own
+   border-bottom already separates it from the heading — an immediate second
+   border-top here would just draw two lines on top of each other. */
+.section-header + .subsection {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.subsection-header {
+    margin-bottom: 14px;
+}
+
+.subsection-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
 }
 
 /* ============================================================
    Glossary
    ============================================================ */
-.glossary-top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+.glossary-enable-row {
     margin-bottom: 14px;
-    flex-wrap: wrap;
+}
+
+#glossarySettings {
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
 }
 
 .glossary-actions {
@@ -852,10 +1144,32 @@ button, .secondary-btn {
    ============================================================ */
 .content-footer {
     display: flex;
+    align-items: center;
+    flex-shrink: 0; /* .content-inner above is the flexible one; this stays its natural size */
     gap: 12px;
-    padding-top: 24px;
+    padding: 16px 40px;
     border-top: 1px solid var(--border);
-    margin-top: 8px;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-primary);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+    z-index: 20;
+}
+
+.footer-spacer {
+    flex: 1;
+}
+
+.footer-issue-link {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.footer-issue-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
 }
 
 /* ============================================================

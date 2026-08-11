@@ -54,7 +54,7 @@ let translationCancelled = false;  // Flag to cancel ongoing translation
 let nextNodeId = 0;
 let nextSegmentId = 0;
 let currentTargetLanguage = 'en';
-let maxConcurrentRequests = 4; // Default parallel requests (LMStudio 0.4.0+ supports up to 4)
+let maxConcurrentRequests = 4; // Default parallel requests (1-32, tunable in Settings > Performance)
 let autoTranslateEnabled = false;
 let showGlow = false; // Setting for glow effect (disabled by default)
 let mutationObserver = null;
@@ -1158,7 +1158,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'START_TRANSLATION':
             if (message.showGlow !== undefined) showGlow = message.showGlow;
             if (message.maxConcurrentRequests !== undefined) {
-                maxConcurrentRequests = Math.max(1, Math.min(4, message.maxConcurrentRequests));
+                maxConcurrentRequests = Math.max(1, Math.min(32, message.maxConcurrentRequests));
             }
             translatePage(message.targetLanguage, message.sourceLanguage, true);
             sendResponse({ started: true });
@@ -1167,7 +1167,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
         case 'TRANSLATE_SELECTION':
             if (message.showGlow !== undefined) showGlow = message.showGlow;
             if (message.maxConcurrentRequests !== undefined) {
-                maxConcurrentRequests = Math.max(1, Math.min(4, message.maxConcurrentRequests));
+                maxConcurrentRequests = Math.max(1, Math.min(32, message.maxConcurrentRequests));
             }
             translateSelection(message.targetLanguage, message.sourceLanguage);
             sendResponse({ started: true });

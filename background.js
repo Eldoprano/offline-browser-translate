@@ -24,10 +24,12 @@ const DEFAULT_SETTINGS = {
     sourceLanguage: 'auto', // 'auto' = detect from page, or specific code
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
-    maxConcurrentRequests: 4, // 1-4 parallel requests (LMStudio 0.4.0+ supports up to 4)
-    useAdvanced: false,
-    customSystemPrompt: '',
-    customUserPromptTemplate: '',
+    maxConcurrentRequests: 4, // 1-32 parallel requests (LMStudio 0.4.0+ supports parallelism)
+    // Per-format prompt overrides: { [format]: { system, user } }. A format with
+    // no entry here falls back to its built-in PROMPT_TEMPLATES text. There's no
+    // 'auto' entry — auto resolves to a concrete format first, and that format's
+    // (possibly overridden) prompt is what's actually used.
+    customPrompts: {},
     requestFormat: 'auto', // 'auto' (detect from model), 'default', 'translategemma', 'hunyuan', 'simple', 'custom'
     temperature: 0.3,
     useStructuredOutput: true,
@@ -40,7 +42,7 @@ const DEFAULT_SETTINGS = {
     cacheMode: 'off',
     debug: false,       // Enable verbose logging
     floatingButton: false, // Show floating translate button on text selection (requires <all_urls> permission)
-    useGlossary: true,  // Inject matching glossary terms into the prompt for consistent proper-noun translation
+    useGlossary: false,  // Off by default; when on, injects matching glossary terms into the prompt for consistent proper-noun translation
     // Translate a page as soon as it loads when it declares a language other
     // than the target one (requires <all_urls> permission). Off by default:
     // every page load costs real inference time on the user's own machine.
@@ -963,13 +965,13 @@ async function translate(textItems, targetLanguage, settings) {
     const isPlainText = PLAIN_TEXT_FORMATS.has(format);
     const template = PROMPT_TEMPLATES[format] || PROMPT_TEMPLATES.default;
 
-    // Use custom prompts if advanced mode is enabled
-    let systemTemplate = template.system;
-    let userTemplate = template.user;
-    if (settings.useAdvanced) {
-        if (settings.customSystemPrompt) systemTemplate = settings.customSystemPrompt;
-        if (settings.customUserPromptTemplate) userTemplate = settings.customUserPromptTemplate;
-    }
+    // A per-format override (edited and saved on the options page) wins over the
+    // built-in template for that format. This applies whether the format was
+    // picked explicitly or reached via 'auto' detection — the override is keyed
+    // by the resolved format either way.
+    const override = settings.customPrompts && settings.customPrompts[format];
+    const systemTemplate = (override && override.system) || template.system;
+    const userTemplate = (override && override.user) || template.user;
 
     // Template variables shared across attempts
     const targetLangName = getLanguageName(targetLanguage);
