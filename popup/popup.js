@@ -17,10 +17,8 @@ const DEFAULT_SETTINGS = {
     pinnedModels: [],
     maxTokensPerBatch: 2000,
     maxItemsPerBatch: 8,
-    maxConcurrentRequests: 4, // 1-4 parallel requests (LMStudio 0.4.0+ supports parallelism)
-    useAdvanced: false,
-    customSystemPrompt: '',
-    customUserPromptTemplate: '',
+    maxConcurrentRequests: 4, // 1-32 parallel requests (LMStudio 0.4.0+ supports parallelism)
+    customPrompts: {}, // per-format prompt overrides, edited on the options page
     requestFormat: 'auto',
     temperature: 0.3,
     useStructuredOutput: true,
@@ -63,19 +61,17 @@ const elements = {
     providerSelect: document.getElementById('providerSelect'),
     ollamaUrl: document.getElementById('ollamaUrl'),
     lmstudioUrl: document.getElementById('lmstudioUrl'),
-    maxTokens: document.getElementById('maxTokens'),
-    maxItems: document.getElementById('maxItems'),
-    temperature: document.getElementById('temperature'),
-    temperatureValue: document.getElementById('temperatureValue'),
-    showGlow: document.getElementById('showGlow'),
     cacheMode: document.getElementById('cacheMode'),
     cacheBackendWarning: document.getElementById('cacheBackendWarning'),
     cacheNewBadge: document.getElementById('cacheNewBadge'),
     clearCache: document.getElementById('clearCache'),
     cacheCount: document.getElementById('cacheCount'),
     floatingButton: document.getElementById('floatingButton'),
+    autoTranslatePages: document.getElementById('autoTranslatePages'),
+    autoTranslateOptionsLink: document.getElementById('autoTranslateOptionsLink'),
     saveSettings: document.getElementById('saveSettings'),
     openOptions: document.getElementById('openOptions'),
+    openOptionsHeader: document.getElementById('openOptionsHeader'),
     resetSettings: document.getElementById('resetSettings'),
     toast: document.getElementById('toast')
 };
@@ -578,13 +574,9 @@ function applySettingsToUI() {
     elements.providerSelect.value = currentSettings.provider;
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
-    elements.maxTokens.value = currentSettings.maxTokensPerBatch;
-    elements.maxItems.value = currentSettings.maxItemsPerBatch || 8;
-    elements.temperature.value = currentSettings.temperature;
-    elements.temperatureValue.textContent = currentSettings.temperature;
-    elements.showGlow.checked = currentSettings.showGlow !== false;
     if (elements.cacheMode) elements.cacheMode.value = currentSettings.cacheMode || 'off';
     if (elements.floatingButton) elements.floatingButton.checked = !!currentSettings.floatingButton;
+    if (elements.autoTranslatePages) elements.autoTranslatePages.checked = !!currentSettings.autoTranslatePages;
 
     // Restore source language override
     if (elements.sourceLangOverride && currentSettings.sourceLanguage) {
@@ -730,7 +722,7 @@ function bannerHTML(type) {
             <li>Load a translation model (e.g. <code style="background: var(--bg1, #2b2b2b); padding: 1px 4px; border-radius: 3px;">ollama pull translategemma</code>)</li>
             <li>Click the refresh button above</li>
         </ol>
-        <div style="margin-top: 4px; font-size: 11px; opacity: 0.8;">llama.cpp, vLLM and other OpenAI-compatible servers also work — put their base URL in the LMStudio URL field.</div>
+        <div style="margin-top: 4px; font-size: 11px; opacity: 0.8;">llama.cpp, vLLM and other OpenAI-compatible servers also work. Put their base URL in the LMStudio URL field.</div>
     `;
 }
 
@@ -833,16 +825,12 @@ async function saveCurrentSettings() {
         pinnedModels: [...modelPicker.pinned],
         targetLanguage: langPicker.getValue(),
         pinnedLanguages: langPicker.pinned,
-        maxTokensPerBatch: parseInt(elements.maxTokens.value) || 2000,
-        maxItemsPerBatch: parseInt(elements.maxItems.value) || 8,
-        temperature: parseFloat(elements.temperature.value) || 0.3,
-        showGlow: elements.showGlow.checked,
         cacheMode: elements.cacheMode ? elements.cacheMode.value : 'off',
         // Save the source language override preference
         sourceLanguage: elements.sourceLangOverride ? elements.sourceLangOverride.value : 'auto'
-        // Request format, structured-output and custom prompts are managed in
-        // the full Settings page; we omit them here so the background merge keeps
-        // whatever was configured there.
+        // Request format, structured-output, batch/temperature tuning, glow and custom
+        // prompts are managed in the full Settings page; we omit them here so the
+        // background merge keeps whatever was configured there.
     };
 
     await browserAPI.runtime.sendMessage({
@@ -1036,7 +1024,7 @@ function setupEventListeners() {
                     showToast('Permission denied', 'error');
                     return;
                 }
-                showToast('Floating button enabled — reload pages to activate');
+                showToast('Floating button enabled. Reload pages to activate');
             } else {
                 showToast('Floating button disabled');
             }
@@ -1051,10 +1039,36 @@ function setupEventListeners() {
         });
     }
 
-    // Temperature slider
-    elements.temperature.addEventListener('input', (e) => {
-        elements.temperatureValue.textContent = e.target.value;
-    });
+    // Auto-translate-on-load toggle — permission required to enable, same
+    // shared-permission bookkeeping as the floating button above. Per-language/
+    // per-site exceptions still live in the full Settings page only.
+    if (elements.autoTranslatePages) {
+        elements.autoTranslatePages.addEventListener('change', async (e) => {
+            if (e.target.checked) {
+                const granted = await browserAPI.permissions.request({ origins: ['<all_urls>'] });
+                if (!granted) {
+                    e.target.checked = false;
+                    showToast('Permission denied', 'error');
+                    return;
+                }
+                showToast('Auto-translate enabled. Reload pages to activate');
+            } else {
+                showToast('Auto-translate disabled');
+            }
+            currentSettings.autoTranslatePages = e.target.checked;
+            await browserAPI.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: currentSettings });
+            await browserAPI.runtime.sendMessage({ type: 'SYNC_CONTENT_SCRIPT' });
+            if (!e.target.checked && !currentSettings.floatingButton) {
+                try { await browserAPI.permissions.remove({ origins: ['<all_urls>'] }); } catch (err) {}
+            }
+        });
+    }
+
+    if (elements.autoTranslateOptionsLink) {
+        elements.autoTranslateOptionsLink.addEventListener('click', () => {
+            browserAPI.runtime.openOptionsPage();
+        });
+    }
 
     // Save settings button
     elements.saveSettings.addEventListener('click', async () => {
@@ -1066,7 +1080,7 @@ function setupEventListeners() {
         ]);
         await saveCurrentSettings();
         if (!granted) {
-            showToast('Saved, but permission for the custom server was denied — remote models won\'t load until you allow it.', 'error', 5000);
+            showToast('Saved, but permission for the custom server was denied. Remote models won\'t load until you allow it.', 'error', 5000);
         } else {
             showToast('Settings saved!');
         }
@@ -1077,28 +1091,14 @@ function setupEventListeners() {
     // (Target-language changes are handled by langPicker.onChange.)
     // (Model changes are handled by modelPicker.onChange.)
 
-    // Glow toggle - update in real-time
-    elements.showGlow.addEventListener('change', async () => {
-        currentSettings.showGlow = elements.showGlow.checked;
-        await saveCurrentSettings();
-        // Send to content script to update existing translations
-        try {
-            const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
-            if (tab && tab.id) {
-                await browserAPI.tabs.sendMessage(tab.id, {
-                    type: 'SET_GLOW',
-                    enabled: currentSettings.showGlow
-                });
-            }
-        } catch (e) {
-            // Content script may not be loaded
-        }
-    });
-
-
     // Open options page
     if (elements.openOptions) {
         elements.openOptions.addEventListener('click', () => {
+            browserAPI.runtime.openOptionsPage();
+        });
+    }
+    if (elements.openOptionsHeader) {
+        elements.openOptionsHeader.addEventListener('click', () => {
             browserAPI.runtime.openOptionsPage();
         });
     }

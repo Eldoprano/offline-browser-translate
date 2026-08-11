@@ -16,6 +16,15 @@
 <body>
   <div class="container">
     <header>
+      <button type="button" id="openOptionsHeader" class="header-icon-btn header-icon-btn--left"
+        title="Open full settings page" aria-label="Open full settings page">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z">
+          </path>
+        </svg>
+      </button>
       <h1>🌐 Local Translator</h1>
       <p class="subtitle">Privacy-first translation with local LLMs</p>
       <div class="status-dot-wrapper" id="providerStatus" title="Checking...">
@@ -27,13 +36,18 @@
       <div class="form-group">
         <label for="modelTrigger">Model</label>
         <div class="lang-picker" id="modelPickerEl">
-          <button type="button" id="modelTrigger" class="lang-picker-trigger model-picker-trigger" aria-haspopup="listbox" aria-expanded="false" disabled>
+          <button type="button" id="modelTrigger" class="lang-picker-trigger model-picker-trigger"
+            aria-haspopup="listbox" aria-expanded="false" disabled>
             <span id="modelTriggerLabel" class="lang-picker-label">Loading models...</span>
-            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
           </button>
           <div id="modelMenu" class="lang-picker-menu" hidden>
             <div class="lang-picker-search-wrap">
-              <input type="text" id="modelSearch" class="lang-picker-search" placeholder="Search models…" autocomplete="off" spellcheck="false" />
+              <input type="text" id="modelSearch" class="lang-picker-search" placeholder="Search models…"
+                autocomplete="off" spellcheck="false" />
             </div>
             <ul id="modelList" class="lang-picker-list" role="listbox" tabindex="-1"></ul>
           </div>
@@ -44,13 +58,18 @@
       <div class="form-group">
         <label for="langTrigger">Translate to</label>
         <div class="lang-picker" id="languagePicker">
-          <button type="button" id="langTrigger" class="lang-picker-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <button type="button" id="langTrigger" class="lang-picker-trigger" aria-haspopup="listbox"
+            aria-expanded="false">
             <span id="langTriggerLabel" class="lang-picker-label">English</span>
-            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            <svg class="lang-picker-caret" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
           </button>
           <div id="langMenu" class="lang-picker-menu" hidden>
             <div class="lang-picker-search-wrap">
-              <input type="text" id="langSearch" class="lang-picker-search" placeholder="Search languages…" autocomplete="off" spellcheck="false" />
+              <input type="text" id="langSearch" class="lang-picker-search" placeholder="Search languages…"
+                autocomplete="off" spellcheck="false" />
             </div>
             <ul id="langList" class="lang-picker-list" role="listbox" tabindex="-1"></ul>
           </div>
@@ -93,7 +112,18 @@
           <input type="checkbox" id="floatingButton">
           <label for="floatingButton">Floating translate button</label>
         </div>
-        <p class="floating-btn-hint">Shows a translate button next to selected text. <strong>Requires permission to run on all websites.</strong></p>
+        <p class="floating-btn-hint">Shows a translate button next to selected text. <strong>Requires permission to run
+            on all websites.</strong></p>
+      </div>
+
+      <div class="form-group floating-btn-group">
+        <div class="checkbox-row">
+          <input type="checkbox" id="autoTranslatePages">
+          <label for="autoTranslatePages">Auto-translate pages on load</label>
+        </div>
+        <p class="floating-btn-hint"><strong>Requires permission to run on all websites.</strong> Manage language/site
+          exceptions in <button type="button" id="autoTranslateOptionsLink"
+            class="text-btn inline-link">Settings</button>.</p>
       </div>
 
       <hr class="section-divider">
@@ -118,35 +148,16 @@
       </div>
 
       <div class="form-group">
-        <label for="maxTokens">Max tokens per batch</label>
-        <input type="number" id="maxTokens" min="100" max="8000" step="100">
-      </div>
-
-      <div class="form-group">
-        <label for="maxItems">Max items per batch (for live feel)</label>
-        <input type="number" id="maxItems" min="1" max="50" step="1" value="8">
-      </div>
-
-      <div class="form-group">
-        <label for="temperature">Temperature</label>
-        <input type="range" id="temperature" min="0" max="1" step="0.1">
-        <span id="temperatureValue">0.3</span>
-      </div>
-
-      <div class="form-group checkbox-group">
-        <input type="checkbox" id="showGlow" checked>
-        <label for="showGlow">Show translation glow effect</label>
-      </div>
-
-      <div class="form-group">
         <label for="cacheMode">Translation cache <span class="new-badge" id="cacheNewBadge" hidden>New</span></label>
         <select id="cacheMode">
           <option value="off">Don't cache</option>
           <option value="session">Until I close the browser</option>
           <option value="persistent">Keep across sessions</option>
         </select>
-        <p class="floating-btn-hint" id="cacheBackendWarning" hidden>⚠️ This browser doesn't support keeping the cache across sessions.</p>
-        <button id="clearCache" class="text-btn" title="Delete all cached translations">Clear cache (<span id="cacheCount">…</span>)</button>
+        <p class="floating-btn-hint" id="cacheBackendWarning" hidden>⚠️ This browser doesn't support keeping the cache
+          across sessions.</p>
+        <button id="clearCache" class="text-btn" title="Delete all cached translations">Clear cache (<span
+            id="cacheCount">…</span>)</button>
       </div>
 
       <div class="button-row">
@@ -173,12 +184,12 @@
   <!-- Resize handle — drag to make the popup wider/taller -->
   <div class="resize-handle" aria-hidden="true" title="Drag to resize">
     <svg viewBox="0 0 12 12" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="2"  cy="2"  r="1.3"/>
-      <circle cx="2"  cy="6"  r="1.3"/>
-      <circle cx="2"  cy="10" r="1.3"/>
-      <circle cx="6"  cy="6"  r="1.3"/>
-      <circle cx="6"  cy="10" r="1.3"/>
-      <circle cx="10" cy="10" r="1.3"/>
+      <circle cx="2" cy="2" r="1.3" />
+      <circle cx="2" cy="6" r="1.3" />
+      <circle cx="2" cy="10" r="1.3" />
+      <circle cx="6" cy="6" r="1.3" />
+      <circle cx="6" cy="10" r="1.3" />
+      <circle cx="10" cy="10" r="1.3" />
     </svg>
   </div>
 

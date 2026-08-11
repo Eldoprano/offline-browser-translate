@@ -91,6 +91,33 @@ header h1 {
   cursor: help;
 }
 
+/* Header icon buttons (settings shortcut, mirrors the status dot on the other side) */
+.header-icon-btn {
+  position: absolute;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.header-icon-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.header-icon-btn--left {
+  left: 8px;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;
@@ -557,6 +584,20 @@ textarea.highlight-vars {
 
 .text-btn:hover {
   color: var(--red);
+}
+
+/* A .text-btn used as an inline link inside a sentence (not a standalone
+   destructive action) — keep it unobtrusive and accent-colored instead of
+   the default hover-red used for things like "Reset settings". */
+.text-btn.inline-link {
+  padding: 0;
+  font-size: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.text-btn.inline-link:hover {
+  color: var(--accent-hover);
 }
 
 /* Source Language Group */
