@@ -581,7 +581,7 @@ function extractJsonObject(text) {
     return null; // Unbalanced (e.g. truncated) — let the caller fall back.
 }
 
-function parseTranslationResponse(response, originalItems) {
+function parseTranslationResponse(response, originalItems, finishReason) {
     const expectedCount = originalItems.length;
     let translations = [];
 
@@ -666,25 +666,53 @@ function parseTranslationResponse(response, originalItems) {
     }
     if (current) segments.push(current);
 
+    // When the server tells us it cut generation off mid-output, the last segment
+    // in the response was being written the instant that happened — it may be a
+    // half-formed sentence ("Los precios pue"), not a usable translation. Drop it
+    // so it's treated as missing and cleanly retried, instead of risking a mangled
+    // translation landing on the page. Every earlier segment finished before the
+    // cutoff and is unaffected.
+    if (finishReason === 'length' && segments.length > 0) {
+        const cut = segments.pop();
+        debugWarn(`[Background] response was cut off by the output length limit — `
+            + `discarding the in-progress last segment (id ${cut.id}) instead of trusting a possibly-truncated translation`);
+        if (segments.length === 0) {
+            // The one segment we had was the one being cut — nothing usable left.
+            // Bail out here rather than falling through to the last-resort parser
+            // below, which would re-read the same truncated raw response.
+            return [];
+        }
+    }
+
     if (segments.length > 0) {
-        // Decide once for the whole response whether the model's numbering can be
-        // trusted, instead of per segment. Some models (TranslateGemma especially)
-        // drop a segment and renumber the rest into an unbroken run, which keeps
-        // every label inside our valid range while shifting each translation onto
-        // its neighbour's id — silently mangling the page. An unbroken run that is
-        // shorter than expected is indistinguishable from the model having dropped
-        // the first or last item and numbered correctly, so it cannot be trusted
-        // either way. Reject it and let the caller retry the items individually.
-        // A run with a real gap proves our numbering survived, so it is honoured.
+        // Every batch sends the model 0-indexed sequential labels (see requestBatch),
+        // so a clean truncation (model stops after item k of N) and a
+        // dropped-and-renumbered middle item both produce the same shape: an
+        // unbroken run 0..k-1 shorter than expected. finishReason (from the API's
+        // finish_reason/done_reason) resolves the ambiguity when it's available:
+        // 'length' means the model was cut off mid-output and whatever it emitted
+        // up to that point is exactly what it intended — safe to trust. Anything
+        // else (usually 'stop', or unknown on servers that don't report it) means
+        // the model believed it was done despite the shortfall, which is the more
+        // suspicious shape. Either way we trust the prefix and retry only the
+        // missing tail — rejecting the whole batch here previously forced every
+        // truncated response through the slow per-item fallback, which in practice
+        // was most responses. Only reject outright on unambiguous corruption: a
+        // label outside our range, or a repeated label.
         const ids = segments.map(s => s.id);
         const ourIds = new Set(originalItems.map(item => item.id));
         const allOurs = ids.every(id => ourIds.has(id));
         const unique = new Set(ids).size === ids.length;
-        const unbrokenRun = ids.every((id, i) => id === ids[0] + i);
-        if (!allOurs || !unique || (unbrokenRun && ids.length !== expectedCount)) {
+        if (!allOurs || !unique) {
             debugWarn(`[Background] expected ${expectedCount} items, got labels [${ids.join(',')}]`
                 + ` - numbering unreliable, rejecting batch`);
             return [];
+        }
+        if (ids.length < expectedCount) {
+            const reason = finishReason === 'length'
+                ? 'model hit its output length limit'
+                : `model stopped on its own (finish_reason=${finishReason || 'unknown'}) — possible mid-batch skip`;
+            debugWarn(`[Background] batch returned ${ids.length}/${expectedCount} items - ${reason}. Trusting the ${ids.length} received, retrying the rest.`);
         }
 
         for (const seg of segments) {
@@ -783,8 +811,11 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
     }
 
     const data = await response.json();
-    debugLog(`[Background] callOllama: response length=${data.response?.length || 0}`);
-    return data.response;
+    // done_reason tells us WHY generation stopped ('stop' = the model chose to end,
+    // 'length' = it hit num_predict/context and was cut off mid-output). Only
+    // present on newer Ollama versions; undefined on older ones.
+    debugLog(`[Background] callOllama: response length=${data.response?.length || 0} done_reason=${data.done_reason || 'unknown'}`);
+    return { content: data.response, finishReason: data.done_reason || null };
 }
 
 
@@ -874,10 +905,16 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
     // Clean up markdown code blocks if present
     content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
 
-    return content;
+    // finish_reason: 'stop' = the model chose to end on its own, 'length' = it hit
+    // max_tokens/context and was cut off mid-output. Tells us definitively whether
+    // a short batch was a token-budget truncation instead of having to guess from
+    // the label pattern alone.
+    const finishReason = data.choices[0]?.finish_reason || null;
+    debugLog(`[Background] callLMStudio: finish_reason=${finishReason || 'unknown'}`);
+    return { content, finishReason };
 }
 
-// Low-level call to whichever provider, returning the raw text response.
+// Low-level call to whichever provider, returning { content, finishReason }.
 async function callProvider(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput) {
     if (provider === 'ollama') {
         return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput);
@@ -891,8 +928,8 @@ async function callProvider(provider, settings, modelId, systemPrompt, userPromp
 async function translatePlainItem(provider, settings, modelId, text, vars) {
     const systemPrompt = `You are a professional translator. Translate the user's text into ${vars.targetLang}. Output ONLY the translation, with no quotes, labels, JSON, or commentary.`;
     const userPrompt = text;
-    const raw = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, false);
-    return cleanTranslationText((raw || '').trim());
+    const { content } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, false);
+    return cleanTranslationText((content || '').trim());
 }
 
 // Small fast non-cryptographic string hash (cyrb53). Folds the prompt shape
@@ -969,11 +1006,11 @@ async function translate(textItems, targetLanguage, settings) {
             const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'), targetLanguage);
             if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
         }
-        const raw = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
+        const { content: raw, finishReason } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
-        
+
         // Parse using the mapped items so it expects 0, 1, 2...
-        const parsed = parseTranslationResponse(raw, mappedItems);
+        const parsed = parseTranslationResponse(raw, mappedItems, finishReason);
         const good = new Map();
         for (const t of parsed) {
             if (t && t.text && !t.error && !isSuspiciousTranslation(t.text)) {
@@ -992,9 +1029,9 @@ async function translate(textItems, targetLanguage, settings) {
     // structure to parse, so the result cannot land on the wrong item.
     const requestOne = async (text) => {
         const vars = { ...baseVars, texts: text };
-        const raw = await callProvider(provider, settings, modelId,
+        const { content } = await callProvider(provider, settings, modelId,
             buildPrompt(systemTemplate, vars), buildPrompt(userTemplate, vars), false);
-        return cleanTranslationText((raw || '').trim());
+        return cleanTranslationText((content || '').trim());
     };
 
     const results = new Map();          // originalId -> final translated text
