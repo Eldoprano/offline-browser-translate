@@ -25,7 +25,7 @@
           </path>
         </svg>
       </button>
-      <h1>🌐 Local Translator</h1>
+      <h1><img src="../icons/icon48.png" alt="" width="24" height="24" class="header-logo">Local Translator</h1>
       <p class="subtitle">Privacy-first translation with local LLMs</p>
       <div class="status-dot-wrapper" id="providerStatus" title="Checking...">
         <span class="status-dot"></span>
@@ -101,7 +101,7 @@
 
     <section class="settings-toggle">
       <button id="toggleAdvanced" class="toggle-btn">
-        <span>Advanced Settings</span>
+        <span>Quick settings</span>
         <span class="toggle-arrow">▼</span>
       </button>
     </section>
@@ -124,6 +124,10 @@
         <p class="floating-btn-hint"><strong>Requires permission to run on all websites.</strong> Manage language/site
           exceptions in <button type="button" id="autoTranslateOptionsLink"
             class="text-btn inline-link">Settings</button>.</p>
+        <p class="floating-btn-hint ignored-site-note" id="ignoredSiteNote" hidden>
+          This site is on the ignore list, so it won't auto-translate.
+          <button type="button" id="unignoreSiteBtn" class="text-btn inline-link">Un-ignore it</button>
+        </p>
       </div>
 
       <hr class="section-divider">

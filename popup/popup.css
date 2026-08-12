@@ -72,10 +72,20 @@ header {
 }
 
 header h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 4px;
   color: var(--green);
+}
+
+.header-logo {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
 }
 
 .subtitle {
@@ -94,7 +104,7 @@ header h1 {
 /* Header icon buttons (settings shortcut, mirrors the status dot on the other side) */
 .header-icon-btn {
   position: absolute;
-  top: 8px;
+  top: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -115,7 +125,7 @@ header h1 {
 }
 
 .header-icon-btn--left {
-  left: 8px;
+  left: 4px;
 }
 
 .status-dot {
@@ -194,6 +204,11 @@ header h1 {
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.4;
+}
+
+.ignored-site-note {
+  color: var(--warning);
+  margin-top: 4px;
 }
 
 .section-divider {

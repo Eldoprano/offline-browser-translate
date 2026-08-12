@@ -69,6 +69,8 @@ const elements = {
     floatingButton: document.getElementById('floatingButton'),
     autoTranslatePages: document.getElementById('autoTranslatePages'),
     autoTranslateOptionsLink: document.getElementById('autoTranslateOptionsLink'),
+    ignoredSiteNote: document.getElementById('ignoredSiteNote'),
+    unignoreSiteBtn: document.getElementById('unignoreSiteBtn'),
     saveSettings: document.getElementById('saveSettings'),
     openOptions: document.getElementById('openOptions'),
     openOptionsHeader: document.getElementById('openOptionsHeader'),
@@ -173,6 +175,7 @@ async function init() {
     refreshCacheCount();
     refreshCacheBackend();
     initCacheNewBadge();
+    updateIgnoredSiteIndicator();
     await checkProviders();
     await loadModels();
     await checkTranslationStatus();
@@ -564,6 +567,38 @@ async function loadSettings() {
     } catch (e) {
         console.error('Failed to load settings:', e);
     }
+}
+
+let currentTabHostname = null;
+// Set by updateIgnoredSiteIndicator() to the actual never-list entry that
+// matched the tab (which may be a parent domain, e.g. "example.com" for a
+// tab on "news.example.com") - the un-ignore handler must remove THIS, not
+// the tab's own hostname, or removal silently no-ops for subdomain matches.
+let matchedNeverSite = null;
+
+// Surfaces a note (and un-ignore shortcut) when the active tab's site is on
+// the auto-translate never-list - people forget they clicked "Ignore site"
+// on the page widget, then wonder why auto-translate stopped working there.
+async function updateIgnoredSiteIndicator() {
+    if (!elements.ignoredSiteNote) return;
+    currentTabHostname = null;
+    matchedNeverSite = null;
+    try {
+        const [tab] = await browserAPI.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url) currentTabHostname = new URL(tab.url).hostname.toLowerCase();
+    } catch (e) { /* non-http tab (chrome://, etc.) - leave hostname null */ }
+
+    if (!currentTabHostname) {
+        elements.ignoredSiteNote.hidden = true;
+        return;
+    }
+
+    const neverSites = Array.isArray(currentSettings.autoTranslateNeverSites) ? currentSettings.autoTranslateNeverSites : [];
+    matchedNeverSite = neverSites.find(entry => {
+        const site = String(entry || '').trim().toLowerCase();
+        return site && (currentTabHostname === site || currentTabHostname.endsWith('.' + site));
+    }) || null;
+    elements.ignoredSiteNote.hidden = !matchedNeverSite;
 }
 
 // Apply settings to UI
@@ -1067,6 +1102,23 @@ function setupEventListeners() {
     if (elements.autoTranslateOptionsLink) {
         elements.autoTranslateOptionsLink.addEventListener('click', () => {
             browserAPI.runtime.openOptionsPage();
+        });
+    }
+
+    if (elements.unignoreSiteBtn) {
+        elements.unignoreSiteBtn.addEventListener('click', async () => {
+            if (!matchedNeverSite) return;
+            try {
+                const res = await browserAPI.runtime.sendMessage({
+                    type: 'REMOVE_AUTO_TRANSLATE_NEVER_SITE',
+                    hostname: matchedNeverSite
+                });
+                if (res && res.sites) currentSettings.autoTranslateNeverSites = res.sites;
+                elements.ignoredSiteNote.hidden = true;
+                showToast('Un-ignored. Reload the page to auto-translate it.');
+            } catch (e) {
+                showToast('Could not update the site list', 'error');
+            }
         });
     }
 
