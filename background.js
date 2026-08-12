@@ -766,6 +766,28 @@ async function detectModelProvider(modelId, settings) {
     return model ? model.provider : null;
 }
 
+// LM Studio's native (non-OpenAI-compatible) REST API exposes per-model load
+// state ('not-loaded' | 'loading' | 'loaded'), which the OpenAI-compatible
+// /v1/models endpoint doesn't. Used to show "Loading model..." instead of a
+// progress bar that looks frozen while LM Studio JIT-loads the model on the
+// first request. Returns null if unavailable (older LM Studio, or not LM
+// Studio at all) so callers can just skip the check.
+async function getLMStudioModelState(url, modelId) {
+    const path = modelId.split('/').map(encodeURIComponent).join('/');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    try {
+        const response = await fetch(`${normalizeServerUrl(url)}/api/v0/models/${path}`, { signal: controller.signal });
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.state || null;
+    } catch (e) {
+        return null;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
 // PLAIN_TEXT_FORMATS comes from languages.js (shared with the UIs).
 
 async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput) {
@@ -1237,7 +1259,7 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 }
 
                 case 'ADD_AUTO_TRANSLATE_NEVER_SITE': {
-                    // Sent from the on-page banner's "Never on this site" button.
+                    // Sent from the on-page widget's "Ignore site" button.
                     const host = typeof message.hostname === 'string' ? message.hostname.trim().toLowerCase() : '';
                     if (!host) {
                         sendResponse({ ok: false });
@@ -1250,6 +1272,30 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (!sites.includes(host)) sites.push(host);
                     await saveSettings({ autoTranslateNeverSites: sites });
                     sendResponse({ ok: true, sites });
+                    break;
+                }
+
+                case 'REMOVE_AUTO_TRANSLATE_NEVER_SITE': {
+                    // Sent from the popup's "Un-ignore it" link.
+                    const host = typeof message.hostname === 'string' ? message.hostname.trim().toLowerCase() : '';
+                    if (!host) {
+                        sendResponse({ ok: false });
+                        break;
+                    }
+                    const current = await getSettings();
+                    const sites = (Array.isArray(current.autoTranslateNeverSites) ? current.autoTranslateNeverSites : [])
+                        .filter(s => s !== host);
+                    await saveSettings({ autoTranslateNeverSites: sites });
+                    sendResponse({ ok: true, sites });
+                    break;
+                }
+
+                case 'GET_MODEL_STATE': {
+                    if (!settings.selectedModel) { sendResponse({ state: null }); break; }
+                    const provider = await detectModelProvider(settings.selectedModel, settings);
+                    if (provider !== 'lmstudio') { sendResponse({ state: null }); break; }
+                    const state = await getLMStudioModelState(settings.lmstudioUrl, settings.selectedModel);
+                    sendResponse({ state });
                     break;
                 }
 
