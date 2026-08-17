@@ -1639,3 +1639,11 @@ document.addEventListener('selectionchange', () => {
 window.addEventListener('scroll', () => {
     if (floatingTranslateBtn && floatingTranslateBtn.style.display !== 'none') hideFloatingBtn();
 }, { passive: true });
+
+// Page is navigating away / unloading — tell the background to abort this tab's
+// in-flight LLM requests so they don't run to the 5min timeout. Fire-and-forget:
+// the document is being torn down, so we can't await a response.
+window.addEventListener('pagehide', () => {
+    if (!translationInProgress) return;
+    try { browserAPI.runtime.sendMessage({ type: 'CANCEL_TRANSLATION' }); } catch (e) {}
+});
