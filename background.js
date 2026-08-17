@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
     provider: 'auto', // 'auto', 'ollama', 'lmstudio'
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
+    filterLlamaCppUiModels: false,
     selectedModel: '',
     targetLanguage: 'en',
     sourceLanguage: 'auto', // 'auto' = detect from page, or specific code
@@ -85,6 +86,7 @@ Produce only the {{targetLang}} translation, without any additional explanations
 
 // Cache for models to avoid repeated API calls during translation
 let cachedModels = null;
+let cachedModelsFilterLlamaCppUi = null;
 let modelsCacheTime = 0;
 const MODEL_CACHE_TTL = 60000; // 60 seconds
 
@@ -458,7 +460,20 @@ async function listOllamaModels(url) {
     }
 }
 
-async function listLMStudioModels(url) {
+// llama.cpp router includes the rendered model preset in /v1/models. The
+// `ui` preset option is serialized as `webui`; honor it when present without
+// imposing llama.cpp-specific metadata on LM Studio or other OpenAI servers.
+function isLlamaCppModelVisible(model) {
+    const preset = model?.status?.preset;
+    if (typeof preset !== 'string') return true;
+
+    const match = preset.match(/^\s*webui\s*=\s*(\S+)\s*$/mi);
+    if (!match) return true;
+
+    return !['0', 'false', 'no', 'off'].includes(match[1].toLowerCase());
+}
+
+async function listLMStudioModels(url, filterLlamaCppUiModels = false) {
     url = normalizeServerUrl(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -467,7 +482,9 @@ async function listLMStudioModels(url) {
         clearTimeout(timeoutId);
         if (!response.ok) throw new Error('Failed to fetch LMStudio models');
         const data = await response.json();
-        return (data.data || []).map(m => ({ id: m.id, name: m.id, provider: 'lmstudio' }));
+        return (data.data || [])
+            .filter(model => !filterLlamaCppUiModels || isLlamaCppModelVisible(model))
+            .map(m => ({ id: m.id, name: m.id, provider: 'lmstudio' }));
     } catch (e) {
         clearTimeout(timeoutId);
         if (e.name === 'AbortError') throw new Error('LMStudio model listing timed out');
@@ -476,8 +493,10 @@ async function listLMStudioModels(url) {
 }
 
 async function listModels(settings, useCache = true) {
+    const filterLlamaCppUiModels = !!settings.filterLlamaCppUiModels;
     // Return cached models if available and not expired
-    if (useCache && cachedModels && (Date.now() - modelsCacheTime < MODEL_CACHE_TTL)) {
+    if (useCache && cachedModels && cachedModelsFilterLlamaCppUi === filterLlamaCppUiModels
+        && (Date.now() - modelsCacheTime < MODEL_CACHE_TTL)) {
         return cachedModels;
     }
 
@@ -489,7 +508,7 @@ async function listModels(settings, useCache = true) {
     // provider was explicitly selected.
     const [lmstudioResult, ollamaResult] = await Promise.allSettled([
         (provider === 'lmstudio' || provider === 'auto')
-            ? listLMStudioModels(settings.lmstudioUrl) : Promise.resolve([]),
+            ? listLMStudioModels(settings.lmstudioUrl, filterLlamaCppUiModels) : Promise.resolve([]),
         (provider === 'ollama' || provider === 'auto')
             ? listOllamaModels(settings.ollamaUrl) : Promise.resolve([])
     ]);
@@ -500,6 +519,7 @@ async function listModels(settings, useCache = true) {
 
     // Update cache
     cachedModels = models;
+    cachedModelsFilterLlamaCppUi = filterLlamaCppUiModels;
     modelsCacheTime = Date.now();
 
     return models;
