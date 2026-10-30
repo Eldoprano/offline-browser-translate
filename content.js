@@ -55,6 +55,7 @@ let nextNodeId = 0;
 let nextSegmentId = 0;
 let currentTargetLanguage = 'en';
 let maxConcurrentRequests = 4; // Default parallel requests (1-32, tunable in Settings > Performance)
+let maxItemsPerBatch = 8;      // Default segments per request (tunable in Settings > Performance)
 let autoTranslateEnabled = false;
 let showGlow = false; // Setting for glow effect (disabled by default)
 let mutationObserver = null;
@@ -985,7 +986,7 @@ async function maybeAutoTranslatePage(settings) {
  * Translate a batch of text items with retry logic
  * Returns { applied: number, failed: Array } 
  */
-async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto', retries = 3) {
+async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto', retries = 3, siblingRequests = 1) {
     if (textItems.length === 0) return { applied: 0, failed: [] };
 
     debugLog(`[Translator] translateBatch called for ${textItems.length} items:`, textItems);
@@ -1005,7 +1006,8 @@ async function translateBatch(textItems, targetLanguage, sourceLanguage = 'auto'
                 type: 'TRANSLATE',
                 texts: textItems,
                 targetLanguage,
-                sourceLanguage: pageLanguage // Pass detected page language for TranslateGemma
+                sourceLanguage: pageLanguage, // Pass detected page language for TranslateGemma
+                siblingRequests // How many batches the page has in flight, so background divides its request slots
             });
 
             debugLog(`[Translator] translateBatch response:`, response);
@@ -1135,7 +1137,7 @@ async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAuto
         let totalFromCache = 0; // Elements served from the translation cache
         let cacheActive = false; // Whether the cache was on for this run
         const totalItems = textItems.length;
-        const batchSize = 8; // Process in batches
+        const batchSize = maxItemsPerBatch; // Process in batches
         const failedItems = []; // Track items that failed for potential retry
         let inFlightBatches = []; // Track in-flight batch promises
 
@@ -1155,7 +1157,7 @@ async function translatePage(targetLanguage, sourceLanguage = 'auto', enableAuto
 
                 // Create a trackable batch object with unique ID
                 const batchId = Date.now() + Math.random();
-                const batchPromise = translateBatch(batch, targetLanguage, sourceLanguage)
+                const batchPromise = translateBatch(batch, targetLanguage, sourceLanguage, 3, inFlightBatches.length + 1)
                     .then(result => ({ batchId, result, batch, success: true }))
                     .catch(error => ({ batchId, error, batch, success: false }));
 
@@ -1373,7 +1375,7 @@ async function translateSelection(targetLanguage, sourceLanguage = 'auto') {
         updateProgressWidget(0, `Translating ${textItems.length} selected elements...`);
 
         let totalApplied = 0;
-        const batchSize = 8;
+        const batchSize = maxItemsPerBatch;
         const failedItems = [];
 
         // Started alongside (not before) the real requests below - LM Studio
@@ -1427,6 +1429,9 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.maxConcurrentRequests !== undefined) {
                 maxConcurrentRequests = Math.max(1, Math.min(32, message.maxConcurrentRequests));
             }
+            if (message.maxItemsPerBatch !== undefined) {
+                maxItemsPerBatch = Math.max(1, Math.min(500, message.maxItemsPerBatch));
+            }
             translatePage(message.targetLanguage, message.sourceLanguage, true);
             sendResponse({ started: true });
             break;
@@ -1436,8 +1441,21 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.maxConcurrentRequests !== undefined) {
                 maxConcurrentRequests = Math.max(1, Math.min(32, message.maxConcurrentRequests));
             }
+            if (message.maxItemsPerBatch !== undefined) {
+                maxItemsPerBatch = Math.max(1, Math.min(500, message.maxItemsPerBatch));
+            }
             translateSelection(message.targetLanguage, message.sourceLanguage);
             sendResponse({ started: true });
+            break;
+
+        case 'APPLY_PARTIAL_TRANSLATIONS':
+            // Background pushes each sub-batch's translations as they resolve so
+            // the page fills in progressively. Idempotent: the final batch
+            // response re-applies the same texts, which replaceTextNode tolerates.
+            for (const t of (message.translations || [])) {
+                if (t && t.text && !t.error) replaceTextNode(t.id, t.text);
+            }
+            sendResponse({ ok: true });
             break;
 
         case 'SET_GLOW':

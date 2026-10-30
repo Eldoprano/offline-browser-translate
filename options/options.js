@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
     ollamaUrl: 'http://localhost:11434',
     lmstudioUrl: 'http://localhost:1234',
     selectedModel: '',
+    reasoningEffort: 'none',
     targetLanguage: 'en',
     sourceLanguage: 'auto',
     pinnedLanguages: [],
@@ -638,6 +639,25 @@ const REQUEST_FORMAT_OPTIONS = [
     { value: 'custom', label: 'Custom' },
 ];
 
+const REASONING_EFFORT_OPTIONS = [
+    { value: 'none', label: 'None' },
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' },
+];
+
+const reasoningEffortPicker = createSimpleSelect({
+    els: {
+        picker: document.getElementById('reasoningEffortPickerEl'),
+        trigger: document.getElementById('reasoningEffortTrigger'),
+        label: document.getElementById('reasoningEffortTriggerLabel'),
+        menu: document.getElementById('reasoningEffortMenu'),
+        list: document.getElementById('reasoningEffortList'),
+    },
+    getOptions: () => REASONING_EFFORT_OPTIONS,
+    initialValue: 'none',
+});
+
 const requestFormatPicker = createSimpleSelect({
     els: {
         picker: elements.requestFormatPickerEl,
@@ -696,6 +716,7 @@ const neverLanguagePicker = createSimpleSelect({
 function initSimpleSelects() {
     providerPicker.init();
     sourceLanguagePicker.init();
+    reasoningEffortPicker.init();
     requestFormatPicker.onChange = (value) => {
         updateFormatDescription(value);
         updateVisibility();
@@ -866,6 +887,7 @@ async function loadSettings() {
 // Apply settings to UI
 function applySettingsToUI() {
     providerPicker.setValue(currentSettings.provider);
+    reasoningEffortPicker.setValue(currentSettings.reasoningEffort || 'none');
     elements.ollamaUrl.value = currentSettings.ollamaUrl;
     elements.lmstudioUrl.value = currentSettings.lmstudioUrl;
     sourceLanguagePicker.setValue(currentSettings.sourceLanguage || 'auto');
@@ -996,6 +1018,7 @@ async function saveCurrentSettings() {
     currentSettings = {
         ...currentSettings,
         provider: providerPicker.getValue(),
+        reasoningEffort: reasoningEffortPicker.getValue(),
         ollamaUrl: elements.ollamaUrl.value,
         lmstudioUrl: elements.lmstudioUrl.value,
         selectedModel: modelPicker.getValue() || currentSettings.selectedModel,

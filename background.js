@@ -31,6 +31,10 @@ const DEFAULT_SETTINGS = {
     // (possibly overridden) prompt is what's actually used.
     customPrompts: {},
     requestFormat: 'auto', // 'auto' (detect from model), 'default', 'translategemma', 'hunyuan', 'simple', 'custom'
+    // Reasoning effort for thinking models: 'none' | 'low' | 'medium' | 'high'.
+    // 'none' by default — reasoning models otherwise burn thousands of hidden
+    // reasoning tokens before every translation, at massive speed cost.
+    reasoningEffort: 'none',
     temperature: 0.3,
     useStructuredOutput: true,
     maxOutputRetries: 2,    // Extra attempts when the model returns malformed/missing translations
@@ -790,11 +794,60 @@ async function getLMStudioModelState(url, modelId) {
 
 // PLAIN_TEXT_FORMATS comes from languages.js (shared with the UIs).
 
-async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+// ----------------------------------------------------------------------------
+// Token budgeting
+//
+// Rough char->token estimate (~3.5 chars/token for mixed European text).
+// Only used for budgeting batch sizes and runaway caps, never billing.
+function estimateTokens(text) {
+    return Math.ceil((text || '').length / 3.5);
+}
+
+// Output tokens one translated item is expected to cost: the source text with
+// expansion headroom plus the JSON envelope ({"id": N, "text": "..."}).
+function estimateOutputTokens(text) {
+    return Math.ceil(estimateTokens(text) * 1.4) + 25;
+}
+
+// Split items into sub-batches whose combined estimated OUTPUT tokens stay
+// within budgetTokens, so each HTTP request's generation fits its share of the
+// server's context window. Item order is preserved.
+function splitByTokenBudget(items, budgetTokens) {
+    const batches = [];
+    let current = [];
+    let currentEst = 0;
+    for (const item of items) {
+        const est = estimateOutputTokens(item.text);
+        if (current.length > 0 && currentEst + est > budgetTokens) {
+            batches.push(current);
+            current = [];
+            currentEst = 0;
+        }
+        current.push(item);
+        currentEst += est;
+    }
+    if (current.length > 0) batches.push(current);
+    return batches;
+}
+
+// Runaway cap for calls with no better estimate (per-item fallback etc.):
+// prompt size with expansion slack. Normal completions stop naturally long
+// before this — it only bounds pathological repetition.
+function defaultMaxOutputTokens(userPrompt) {
+    return Math.max(256, Math.ceil(estimateTokens(userPrompt) * 1.75));
+}
+
+async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput, maxTokensHint) {
     const body = {
         model: modelId,
         stream: false
     };
+
+    // Mirror the LM Studio reasoning-effort control: Ollama maps 'none' to
+    // think=false for thinking models; other levels are passed through as-is.
+    if (settings.reasoningEffort) {
+        body.think = settings.reasoningEffort !== 'none';
+    }
 
     // Request a schema-constrained JSON object when the caller wants structure.
     // Passing the full schema (not just 'json') makes Ollama enforce the shape,
@@ -808,6 +861,9 @@ async function callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutpu
     body.options = {};
     if (settings.temperature !== undefined) body.options.temperature = settings.temperature;
     if (settings.numCtx) body.options.num_ctx = settings.numCtx;
+    // Bound generation so a runaway request can't eat the shared context or
+    // spin for minutes. Hint comes from the batch's estimated output size.
+    body.options.num_predict = maxTokensHint || defaultMaxOutputTokens(userPrompt);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
@@ -865,7 +921,7 @@ const TRANSLATION_JSON_SCHEMA = {
     "required": ["translations"],
     "additionalProperties": false
 };
-async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, maxTokensHint) {
     const messages = [];
 
     if (systemPrompt) {
@@ -880,6 +936,13 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
         stream: false
     };
 
+    // Reasoning-effort control for thinking models. 'none' skips the hidden
+    // reasoning pass entirely (LM Studio supports this on OpenAI-compatible
+    // endpoints); higher values trade speed for quality on hard sentences.
+    if (settings.reasoningEffort) {
+        body.reasoning_effort = settings.reasoningEffort;
+    }
+
     if (jsonOutput) {
         body.response_format = {
             "type": "json_schema",
@@ -890,6 +953,10 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
             }
         };
     }
+
+    // Bound generation so a runaway request can't eat the shared context or
+    // spin for minutes. Hint comes from the batch's estimated output size.
+    body.max_tokens = maxTokensHint || defaultMaxOutputTokens(userPrompt);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000);
@@ -918,7 +985,7 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
         // the prompt already asks for JSON and the parser tolerates loose output.
         if (jsonOutput && response.status === 400 && /response_format|json_schema|guided/i.test(error)) {
             debugWarn('[Background] Server rejected structured output; retrying without response_format');
-            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false);
+            return callLMStudio(settings, modelId, systemPrompt, userPrompt, false, maxTokensHint);
         }
         throw new Error(`LMStudio error: ${error}`);
     }
@@ -939,11 +1006,11 @@ async function callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOut
 }
 
 // Low-level call to whichever provider, returning { content, finishReason }.
-async function callProvider(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput) {
+async function callProvider(provider, settings, modelId, systemPrompt, userPrompt, jsonOutput, maxTokensHint) {
     if (provider === 'ollama') {
-        return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput);
+        return callOllama(settings, modelId, systemPrompt, userPrompt, jsonOutput, maxTokensHint);
     }
-    return callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput);
+    return callLMStudio(settings, modelId, systemPrompt, userPrompt, jsonOutput, maxTokensHint);
 }
 
 // Translate a single text as plain text (no JSON), used as the last-resort
@@ -971,7 +1038,7 @@ function hashString(str) {
     return (h2 >>> 0).toString(36) + (h1 >>> 0).toString(36);
 }
 
-async function translate(textItems, targetLanguage, settings) {
+async function translate(textItems, targetLanguage, settings, options = {}) {
     const modelId = settings.selectedModel;
     if (!modelId) throw new Error('No model selected');
 
@@ -1030,7 +1097,14 @@ async function translate(textItems, targetLanguage, settings) {
             const glossaryBlock = await buildGlossaryBlock(settings, mappedItems.map(m => m.text).join('\n'), targetLanguage);
             if (glossaryBlock) userPrompt = `${glossaryBlock}\n\n${userPrompt}`;
         }
-        const { content: raw, finishReason } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson);
+        // Estimated output tokens for this exact batch (expansion + JSON
+        // envelope per item), with slack, passed down as the generation cap —
+        // tight enough that truncation only happens on genuine runaway.
+        const estimatedOutputTokens = items.reduce(
+            (sum, item) => sum + estimateOutputTokens(item.text), 0);
+        const maxTokensHint = Math.max(512, Math.ceil(estimatedOutputTokens * 1.25));
+
+        const { content: raw, finishReason } = await callProvider(provider, settings, modelId, systemPrompt, userPrompt, wantJson, maxTokensHint);
         debugLog(`[Background] Raw LLM response (first 300 chars):`, (raw || '').substring(0, 300));
 
         // Parse using the mapped items so it expects 0, 1, 2...
@@ -1138,43 +1212,101 @@ async function translate(textItems, targetLanguage, settings) {
 
     let pending = missGroups.map(g => g.item);   // representative item per unresolved group
 
-    // Attempt the batched request, retrying only the items that came back
+    // Attempt the batched requests, retrying only the items that came back
     // missing or malformed. maxOutputRetries extra attempts after the first.
     const maxRetries = Number.isInteger(settings.maxOutputRetries) ? settings.maxOutputRetries : 2;
-    debugLog(`[Background] translate: provider=${provider} model=${modelId} format=${format} items=${textItems.length} json=${wantJson}`);
-    for (let attempt = 0; attempt <= maxRetries && pending.length > 0; attempt++) {
-        let good;
-        try {
-            good = await requestBatch(pending);
-        } catch (e) {
-            if (attempt === maxRetries) throw e; // bubble transport errors on last try
-            debugWarn(`[Background] batch attempt ${attempt + 1} threw:`, e.message);
-            continue;
-        }
-        for (const item of pending) {
-            const text = good.get(item.id);
-            if (text !== undefined) results.set(item.id, text);
-        }
-        pending = pending.filter(item => !results.has(item.id));
-        if (pending.length) {
-            debugWarn(`[Background] ${pending.length} item(s) malformed/missing after attempt ${attempt + 1}`);
-        }
-        // Nothing usable at all from a multi-item batch means the response could not
-        // be aligned. Re-sending identical input to a near-deterministic model just
-        // reproduces the same failure, so skip the remaining retries and let the
-        // per-item fallback below resolve it.
-        if (good.size === 0 && pending.length > 1) {
-            debugWarn(`[Background] batch unusable - skipping remaining retries`);
-            break;
-        }
+
+    // Token-budgeted sub-batching: each HTTP request's output is capped so it
+    // fits its share of the server's context window. Items are grouped by
+    // estimated output tokens (expansion + JSON envelope) up to the
+    // maxTokensPerBatch budget, so a batch is bounded by tokens, not just
+    // item count. Sub-batches run sequentially; cross-request parallelism
+    // comes from the content script's in-flight batches.
+    const tokenBudget = Math.min(Math.max(settings.maxTokensPerBatch || 2000, 256), 8192);
+    const subBatches = splitByTokenBudget(pending, tokenBudget);
+    debugLog(`[Background] translate: provider=${provider} model=${modelId} format=${format} items=${textItems.length} json=${wantJson} requests=${subBatches.length} (token budget ${tokenBudget})`);
+
+    // Sub-batches run through a small worker pool so a single large batch still
+    // uses all Max Concurrent Requests slots. When the content script has
+    // several batches in flight itself it reports a sibling count, and the
+    // slots are divided between them to avoid oversubscribing the server.
+    const siblings = Math.max(1, options.siblingRequests || 1);
+    const totalConcurrency = Math.max(1, settings.maxConcurrentRequests || 4);
+    const poolSize = Math.max(1, Math.min(subBatches.length, Math.floor(totalConcurrency / siblings)));
+    if (subBatches.length > 1) {
+        debugLog(`[Background] running ${subBatches.length} request(s) with pool size ${poolSize} (${siblings} sibling batch(es))`);
     }
+
+    // Items that survived every retry in their sub-batch, for the per-item
+    // fallback below.
+    const unresolvedItems = [];
+
+    // First fatal transport error (server down etc.) - rethrown after the pool
+    // drains so already-successful sub-batches keep their results.
+    let fatalError = null;
+
+    const runSubBatch = async (subBatch) => {
+        for (let attempt = 0; attempt <= maxRetries && subBatch.length > 0; attempt++) {
+            let good;
+            try {
+                good = await requestBatch(subBatch);
+            } catch (e) {
+                if (attempt === maxRetries) throw e; // transport errors bubble to the worker
+                debugWarn(`[Background] batch attempt ${attempt + 1} threw:`, e.message);
+                continue;
+            }
+            // Resolve newly-good items and stream them to the page right away —
+            // the full batch response still drives bookkeeping (progress, failures).
+            const newlyResolved = [];
+            for (const item of subBatch) {
+                const text = good.get(item.id);
+                if (text !== undefined) {
+                    results.set(item.id, text);
+                    newlyResolved.push({ id: item.id, text });
+                }
+            }
+            if (newlyResolved.length > 0 && options.onPartial) {
+                try { await options.onPartial(newlyResolved); }
+                catch (e) { debugWarn('[Background] partial-apply push failed:', e.message); }
+            }
+            subBatch = subBatch.filter(item => !results.has(item.id));
+            if (subBatch.length) {
+                debugWarn(`[Background] ${subBatch.length} item(s) malformed/missing after attempt ${attempt + 1}`);
+            }
+            // Nothing usable at all from a multi-item batch means the response could not
+            // be aligned. Re-sending identical input to a near-deterministic model just
+            // reproduces the same failure, so skip the remaining retries and let the
+            // per-item fallback below resolve it.
+            if (good.size === 0 && subBatch.length > 1) {
+                debugWarn(`[Background] batch unusable - skipping remaining retries`);
+                break;
+            }
+        }
+        unresolvedItems.push(...subBatch);
+    };
+
+    const queue = [...subBatches];
+    const runWorker = async () => {
+        while (queue.length > 0 && !fatalError) {
+            const subBatch = queue.shift();
+            try {
+                await runSubBatch(subBatch);
+            } catch (e) {
+                if (!fatalError) fatalError = e;
+                // Server is likely down - stop pulling more work.
+                return;
+            }
+        }
+    };
+    await Promise.all(Array.from({ length: poolSize }, () => runWorker()));
+    if (fatalError) throw fatalError;
 
     // Per-item fallback: translate the still-failing items one at a time, with no
     // batch structure to parse. Plain-text formats need this too — they carry the
     // same [id]: markers in a batched prompt, and a dropped segment shifts the rest.
-    if (pending.length > 0 && settings.plainTextFallback !== false) {
-        debugWarn(`[Background] Falling back to per-item translation for ${pending.length} item(s)`);
-        for (const item of pending) {
+    if (unresolvedItems.length > 0 && settings.plainTextFallback !== false) {
+        debugWarn(`[Background] Falling back to per-item translation for ${unresolvedItems.length} item(s)`);
+        for (const item of unresolvedItems) {
             try {
                 const text = isPlainText
                     ? await requestOne(item.text)
@@ -1323,10 +1455,24 @@ browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
                         };
                     }
 
+                    // Stream each sub-batch's results to the page as they resolve,
+                    // so a big batch paints progressively instead of all at once.
+                    // The final response below still carries everything.
+                    const onPartial = (sender && sender.tab && typeof sender.tab.id === 'number')
+                        ? (translations) => browserAPI.tabs.sendMessage(sender.tab.id, {
+                            type: 'APPLY_PARTIAL_TRANSLATIONS',
+                            translations
+                        })
+                        : null;
+
                     const result = await translate(
                         message.texts,
                         message.targetLanguage,
-                        settingsWithSource
+                        settingsWithSource,
+                        {
+                            onPartial,
+                            siblingRequests: Math.max(1, message.siblingRequests || 1)
+                        }
                     );
                     sendResponse({
                         translations: result.translations,
@@ -1513,7 +1659,8 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
                     targetLanguage: settings.targetLanguage,
                     sourceLanguage: sourceLang || 'auto', // Use detected or fall back to auto
                     showGlow: settings.showGlow,
-                    maxConcurrentRequests: settings.maxConcurrentRequests || 4
+                    maxConcurrentRequests: settings.maxConcurrentRequests || 4,
+                    maxItemsPerBatch: settings.maxItemsPerBatch || 8
                 });
             };
 
@@ -1567,7 +1714,8 @@ browserAPI.contextMenus.onClicked.addListener(async (info, tab) => {
                     targetLanguage: settings.targetLanguage,
                     sourceLanguage: sourceLang || 'auto',
                     showGlow: settings.showGlow,
-                    maxConcurrentRequests: settings.maxConcurrentRequests || 4
+                    maxConcurrentRequests: settings.maxConcurrentRequests || 4,
+                    maxItemsPerBatch: settings.maxItemsPerBatch || 8
                 });
             };
 

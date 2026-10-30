@@ -965,7 +965,8 @@ async function startTranslation() {
                 targetLanguage: currentSettings.targetLanguage,
                 sourceLanguage: finalSourceLang,
                 showGlow: currentSettings.showGlow,
-                maxConcurrentRequests: currentSettings.maxConcurrentRequests || 4
+                maxConcurrentRequests: currentSettings.maxConcurrentRequests || 4,
+                maxItemsPerBatch: currentSettings.maxItemsPerBatch || 8
             });
             if (response && response.started) {
                 return; // Success! UI stays in translating state
